@@ -239,6 +239,7 @@ class App(ctk.CTk):
                 text=True,
                 encoding="utf-8",
                 errors="replace",
+                creationflags=subprocess.CREATE_NO_WINDOW,
             )
             for line in proc.stdout:
                 self._log_write(line)
