@@ -220,6 +220,13 @@ class App(ctk.CTk):
         if success:
             success = self._run_cmd("Passo 2/2 — pack file", cmd2)
 
+        if os.path.exists(temp):
+            try:
+                os.remove(temp)
+                self._log_write(f"\n🗑 Arquivo temporário removido: {temp}\n")
+            except Exception as e:
+                self._log_write(f"\n[AVISO] Não foi possível remover o arquivo temporário: {e}\n")
+
         if success:
             self._log_write("\n✓ Conversão concluída com sucesso!\n")
             self._log_write(f"  Arquivo gerado: {output}\n")
