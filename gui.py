@@ -9,6 +9,8 @@ from tkinter import filedialog
 ctk.set_appearance_mode("dark")
 ctk.set_default_color_theme("blue")
 
+VERSION = "0.0.1"
+
 CONFIG_PATH = os.path.join(os.environ.get("APPDATA", os.path.expanduser("~")), "MkPFS Converter", "config.json")
 
 
@@ -32,7 +34,7 @@ def _save_config(data: dict):
 class App(ctk.CTk):
     def __init__(self):
         super().__init__()
-        self.title("MkPFS Converter")
+        self.title(f"MkPFS Converter v{VERSION}")
         self.geometry("720x620")
         self.resizable(False, False)
 
@@ -54,7 +56,8 @@ class App(ctk.CTk):
         pad = {"padx": 20, "pady": (10, 0)}
 
         # ── Title ──────────────────────────────────────────────
-        ctk.CTkLabel(self, text="MkPFS Converter", font=ctk.CTkFont(size=20, weight="bold")).pack(pady=(20, 10))
+        ctk.CTkLabel(self, text="MkPFS Converter", font=ctk.CTkFont(size=20, weight="bold")).pack(pady=(20, 4))
+        ctk.CTkLabel(self, text=f"v{VERSION}", font=ctk.CTkFont(size=12), text_color="gray").pack(pady=(0, 10))
 
         # ── Step 1: Input Folder ───────────────────────────────
         self._section("Passo 1 — Pasta de entrada")
