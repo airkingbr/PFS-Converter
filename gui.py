@@ -122,8 +122,11 @@ class App(ctk.CTk):
         path = filedialog.askdirectory(title="Selecione a pasta de entrada")
         if path:
             self._input_folder.set(path)
+            folder_name = os.path.basename(path.rstrip("/\\"))
             if not self._temp_file.get():
                 self._temp_file.set(os.path.join(path, "pfs_image.dat"))
+            output_dir = os.path.dirname(self._output_file.get()) if self._output_file.get() else path
+            self._output_file.set(os.path.join(output_dir, f"{folder_name}.ffpfsc"))
 
     def _pick_temp(self):
         current = self._temp_file.get()
