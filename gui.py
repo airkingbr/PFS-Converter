@@ -40,7 +40,7 @@ class App(ctk.CTk):
     def __init__(self):
         super().__init__()
         self.title(f"MkPFS Converter v{VERSION}")
-        self.geometry("720x660")
+        self.geometry("720x740")
         self.resizable(False, False)
 
         self._cpu_count = multiprocessing.cpu_count()
@@ -139,7 +139,7 @@ class App(ctk.CTk):
 
         # Log
         ctk.CTkLabel(parent, text="Log", anchor="w").pack(fill="x", padx=16, pady=(10, 2))
-        self._t1_log = ctk.CTkTextbox(parent, height=130,
+        self._t1_log = ctk.CTkTextbox(parent, height=200,
                                        font=ctk.CTkFont(family="Courier New", size=11),
                                        state="disabled")
         self._t1_log.pack(fill="both", expand=True, padx=16, pady=(0, 10))
@@ -198,7 +198,7 @@ class App(ctk.CTk):
 
         # Log
         ctk.CTkLabel(parent, text="Log", anchor="w").pack(fill="x", padx=16, pady=(10, 2))
-        self._t2_log = ctk.CTkTextbox(parent, height=130,
+        self._t2_log = ctk.CTkTextbox(parent, height=200,
                                        font=ctk.CTkFont(family="Courier New", size=11),
                                        state="disabled")
         self._t2_log.pack(fill="both", expand=True, padx=16, pady=(0, 10))
