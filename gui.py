@@ -42,6 +42,9 @@ class App(ctk.CTk):
         self._temp_file = ctk.StringVar()
         self._output_file = ctk.StringVar()
         self._cpu_count = multiprocessing.cpu_count()
+        self._active_proc = None
+
+        self.protocol("WM_DELETE_WINDOW", self._on_close)
 
         cfg = _load_config()
         if cfg.get("temp_file"):
@@ -108,6 +111,15 @@ class App(ctk.CTk):
         ctk.CTkLabel(self, text="Log", anchor="w").pack(fill="x", padx=20, pady=(16, 4))
         self._log = ctk.CTkTextbox(self, height=200, font=ctk.CTkFont(family="Courier New", size=12), state="disabled")
         self._log.pack(fill="both", expand=True, padx=20, pady=(0, 20))
+
+    def _on_close(self):
+        if self._active_proc and self._active_proc.poll() is None:
+            self._active_proc.terminate()
+            try:
+                self._active_proc.wait(timeout=3)
+            except Exception:
+                self._active_proc.kill()
+        self.destroy()
 
     def _on_cpu_slider(self, value):
         cpus = int(value)
@@ -250,10 +262,12 @@ class App(ctk.CTk):
                 errors="replace",
                 creationflags=subprocess.CREATE_NO_WINDOW,
             )
+            self._active_proc = proc
             for line in proc.stdout:
                 self._log_write(line)
             proc.stdout.close()
             proc.wait()
+            self._active_proc = None
             return proc.returncode == 0
         except FileNotFoundError:
             self._log_write("[ERRO] Comando 'mkpfs' não encontrado. Verifique a instalação.\n")
