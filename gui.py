@@ -199,7 +199,7 @@ class App(ctk.CTk):
 
         cmd1 = [
             "mkpfs", "pack", "folder",
-            "--verify", "--no-compress",
+            "--no-compress",
             "--no-adjust-output-file-extension",
             "--version", "PS5",
             "--inode-bits", "32",
@@ -211,7 +211,6 @@ class App(ctk.CTk):
         temp_dir = os.path.dirname(os.path.abspath(temp))
         cmd2 = [
             "mkpfs", "pack", "file",
-            "--verify",
             "--version", "PS5",
             "--inode-bits", "32",
             "--cpu-count", str(cpus),
