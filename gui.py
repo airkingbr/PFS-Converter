@@ -5,6 +5,7 @@ import os
 import re
 import json
 import time
+import shutil
 import multiprocessing
 from tkinter import filedialog
 
@@ -325,12 +326,13 @@ class App(ctk.CTk):
             "--cpu-count", str(cpus),
             folder, temp,
         ]
-        temp_dir = os.path.dirname(os.path.abspath(temp))
+        staging_dir = os.path.join(os.path.dirname(os.path.abspath(temp)), "_mkpfs_staging")
+        os.makedirs(staging_dir, exist_ok=True)
         cmd2 = [
             "mkpfs", "pack", "file",
             "--version", "PS5", "--inode-bits", "32",
             "--cpu-count", str(cpus),
-            "--temp-folder", temp_dir,
+            "--temp-folder", staging_dir,
             temp, output,
         ]
 
@@ -340,11 +342,13 @@ class App(ctk.CTk):
             success = self._run_cmd(cmd2, self._t1_bar, self._t1_phase_label,
                                      self._t1_log, step_prefix="Passo 2/2")
 
+        # Limpa arquivo temporário e pasta de staging
         if os.path.exists(temp):
             try:
                 os.remove(temp)
             except Exception:
                 pass
+        shutil.rmtree(staging_dir, ignore_errors=True)
 
         elapsed = time.time() - self._t1_start_time
         elapsed_str = self._fmt_elapsed(elapsed)
@@ -380,17 +384,20 @@ class App(ctk.CTk):
         threading.Thread(target=self._t2_run, args=(source, output, cpus), daemon=True).start()
 
     def _t2_run(self, source, output, cpus):
-        temp_dir = os.path.dirname(os.path.abspath(source))
+        staging_dir = os.path.join(os.path.dirname(os.path.abspath(source)), "_mkpfs_staging")
+        os.makedirs(staging_dir, exist_ok=True)
         cmd = [
             "mkpfs", "pack", "file",
             "--version", "PS5", "--inode-bits", "32",
             "--cpu-count", str(cpus),
-            "--temp-folder", temp_dir,
+            "--temp-folder", staging_dir,
             source, output,
         ]
 
         success = self._run_cmd(cmd, self._t2_bar, self._t2_phase_label,
                                  self._t2_log, step_prefix="")
+
+        shutil.rmtree(staging_dir, ignore_errors=True)
 
         elapsed = time.time() - self._t2_start_time
         elapsed_str = self._fmt_elapsed(elapsed)
