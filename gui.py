@@ -14,15 +14,8 @@ VERSION = "0.0.2"
 
 CONFIG_PATH = os.path.join(os.environ.get("APPDATA", os.path.expanduser("~")), "MkPFS Converter", "config.json")
 
-# Fases emitidas pelo mkpfs e seus rótulos
-PHASE_LABELS = {
-    "scan":  "Scan",
-    "read":  "Read",
-    "write": "Write",
-}
-
 # Regex para capturar linhas de progresso: [###---]  45% scan @ ...
-_RE_PROGRESS = re.compile(r"\[([#\-]+)\]\s+(\d+)%\s+(\w+)")
+_RE_PROGRESS = re.compile(r"\[[#\-]+\]\s+(\d+)%\s+(\w+)")
 
 
 def _load_config() -> dict:
@@ -42,56 +35,11 @@ def _save_config(data: dict):
         pass
 
 
-# ──────────────────────────────────────────────────────────────
-#  Widget reutilizável: grupo de barras de progresso por passo
-# ──────────────────────────────────────────────────────────────
-class StepProgress(ctk.CTkFrame):
-    """Exibe um título de passo + barras de progresso para cada fase."""
-
-    def __init__(self, parent, title: str, phases: list[str], **kwargs):
-        super().__init__(parent, fg_color="transparent", **kwargs)
-        self._bars: dict[str, ctk.CTkProgressBar] = {}
-        self._pct_labels: dict[str, ctk.CTkLabel] = {}
-
-        ctk.CTkLabel(self, text=title, anchor="w",
-                     font=ctk.CTkFont(weight="bold")).pack(fill="x", pady=(8, 4))
-
-        for phase in phases:
-            row = ctk.CTkFrame(self, fg_color="transparent")
-            row.pack(fill="x", pady=2)
-
-            ctk.CTkLabel(row, text=PHASE_LABELS.get(phase, phase),
-                         width=46, anchor="w").pack(side="left")
-
-            bar = ctk.CTkProgressBar(row, height=16)
-            bar.set(0)
-            bar.pack(side="left", fill="x", expand=True, padx=(4, 8))
-
-            pct = ctk.CTkLabel(row, text="0%", width=40, anchor="e")
-            pct.pack(side="left")
-
-            self._bars[phase] = bar
-            self._pct_labels[phase] = pct
-
-    def update_phase(self, phase: str, value: float):
-        """value: 0.0 – 1.0"""
-        if phase in self._bars:
-            self._bars[phase].set(value)
-            self._pct_labels[phase].configure(text=f"{int(value * 100)}%")
-
-    def reset(self):
-        for phase in self._bars:
-            self.update_phase(phase, 0)
-
-
-# ──────────────────────────────────────────────────────────────
-#  App principal
-# ──────────────────────────────────────────────────────────────
 class App(ctk.CTk):
     def __init__(self):
         super().__init__()
         self.title(f"MkPFS Converter v{VERSION}")
-        self.geometry("720x640")
+        self.geometry("720x660")
         self.resizable(False, False)
 
         self._cpu_count = multiprocessing.cpu_count()
@@ -180,18 +128,20 @@ class App(ctk.CTk):
                                      command=self._t1_start)
         self._t1_btn.pack(pady=(14, 0), padx=16, fill="x")
 
-        # Progresso — pack folder (scan + read + write)
-        self._t1_prog1 = StepProgress(parent, "Pack Folder", ["scan", "read", "write"])
-        self._t1_prog1.pack(fill="x", padx=16, pady=(10, 0))
+        # Progresso
+        self._t1_phase_label = ctk.CTkLabel(parent, text="", anchor="w",
+                                             font=ctk.CTkFont(size=12))
+        self._t1_phase_label.pack(fill="x", padx=16, pady=(10, 2))
+        self._t1_bar = ctk.CTkProgressBar(parent, height=18)
+        self._t1_bar.set(0)
+        self._t1_bar.pack(fill="x", padx=16)
 
-        # Progresso — pack file (read + write)
-        self._t1_prog2 = StepProgress(parent, "Pack File", ["read", "write"])
-        self._t1_prog2.pack(fill="x", padx=16, pady=(4, 0))
-
-        # Status
-        self._t1_status = ctk.CTkLabel(parent, text="", anchor="w",
-                                        font=ctk.CTkFont(size=12))
-        self._t1_status.pack(fill="x", padx=16, pady=(8, 4))
+        # Log
+        ctk.CTkLabel(parent, text="Log", anchor="w").pack(fill="x", padx=16, pady=(10, 2))
+        self._t1_log = ctk.CTkTextbox(parent, height=130,
+                                       font=ctk.CTkFont(family="Courier New", size=11),
+                                       state="disabled")
+        self._t1_log.pack(fill="both", expand=True, padx=16, pady=(0, 10))
 
     # ──────────────────────────────────────────────────────────
     #  Tab 2
@@ -237,16 +187,21 @@ class App(ctk.CTk):
                                      command=self._t2_start)
         self._t2_btn.pack(pady=(14, 0), padx=16, fill="x")
 
-        # Progresso — pack file (read + write)
-        self._t2_prog = StepProgress(parent, "Pack File", ["read", "write"])
-        self._t2_prog.pack(fill="x", padx=16, pady=(10, 0))
+        # Progresso
+        self._t2_phase_label = ctk.CTkLabel(parent, text="", anchor="w",
+                                             font=ctk.CTkFont(size=12))
+        self._t2_phase_label.pack(fill="x", padx=16, pady=(10, 2))
+        self._t2_bar = ctk.CTkProgressBar(parent, height=18)
+        self._t2_bar.set(0)
+        self._t2_bar.pack(fill="x", padx=16)
 
-        # Status
-        self._t2_status = ctk.CTkLabel(parent, text="", anchor="w",
-                                        font=ctk.CTkFont(size=12))
-        self._t2_status.pack(fill="x", padx=16, pady=(8, 4))
+        # Log
+        ctk.CTkLabel(parent, text="Log", anchor="w").pack(fill="x", padx=16, pady=(10, 2))
+        self._t2_log = ctk.CTkTextbox(parent, height=130,
+                                       font=ctk.CTkFont(family="Courier New", size=11),
+                                       state="disabled")
+        self._t2_log.pack(fill="both", expand=True, padx=16, pady=(0, 10))
 
-    # ──────────────────────────────────────────────────────────
     def _tab_section(self, parent, title):
         ctk.CTkLabel(parent, text=title, anchor="w",
                      font=ctk.CTkFont(weight="bold")).pack(fill="x", padx=16, pady=(12, 2))
@@ -341,20 +296,20 @@ class App(ctk.CTk):
         output = self._t1_output_file.get().strip()
 
         if not folder or not os.path.isdir(folder):
-            self._set_status(self._t1_status, "[ERRO] Selecione uma pasta de entrada válida.", error=True)
+            self._log_append(self._t1_log, "[ERRO] Selecione uma pasta de entrada válida.\n", clear=True)
             return
         if not temp:
-            self._set_status(self._t1_status, "[ERRO] Informe o caminho do arquivo temporário.", error=True)
+            self._log_append(self._t1_log, "[ERRO] Informe o caminho do arquivo temporário.\n", clear=True)
             return
         if not output:
-            self._set_status(self._t1_status, "[ERRO] Informe o caminho do arquivo de saída.", error=True)
+            self._log_append(self._t1_log, "[ERRO] Informe o caminho do arquivo de saída.\n", clear=True)
             return
 
         cpus = int(self._t1_cpu_slider.get())
         self._t1_btn.configure(state="disabled", text="Convertendo...")
-        self._t1_prog1.reset()
-        self._t1_prog2.reset()
-        self._set_status(self._t1_status, "Iniciando...")
+        self._t1_bar.set(0)
+        self._t1_phase_label.configure(text="")
+        self._log_clear(self._t1_log)
         threading.Thread(target=self._t1_run, args=(folder, temp, output, cpus), daemon=True).start()
 
     def _t1_run(self, folder, temp, output, cpus):
@@ -377,12 +332,11 @@ class App(ctk.CTk):
             temp, output,
         ]
 
-        self.after(0, lambda: self._set_status(self._t1_status, "Passo 1/2 — Pack Folder..."))
-        success = self._run_cmd(cmd1, self._t1_prog1)
-
+        success = self._run_cmd(cmd1, self._t1_bar, self._t1_phase_label,
+                                 self._t1_log, step_prefix="Passo 1/2")
         if success:
-            self.after(0, lambda: self._set_status(self._t1_status, "Passo 2/2 — Pack File..."))
-            success = self._run_cmd(cmd2, self._t1_prog2)
+            success = self._run_cmd(cmd2, self._t1_bar, self._t1_phase_label,
+                                     self._t1_log, step_prefix="Passo 2/2")
 
         if os.path.exists(temp):
             try:
@@ -391,9 +345,11 @@ class App(ctk.CTk):
                 pass
 
         if success:
-            self.after(0, lambda: self._set_status(self._t1_status, "✓ Conversão concluída com sucesso!"))
+            self.after(0, lambda: self._t1_phase_label.configure(
+                text="✓ Conversão concluída com sucesso!", text_color="#a3e635"))
         else:
-            self.after(0, lambda: self._set_status(self._t1_status, "✗ Conversão falhou.", error=True))
+            self.after(0, lambda: self._t1_phase_label.configure(
+                text="✗ Conversão falhou.", text_color="#f87171"))
 
         self.after(0, lambda: self._t1_btn.configure(state="normal", text="Converter"))
 
@@ -405,16 +361,17 @@ class App(ctk.CTk):
         output = self._t2_output_file.get().strip()
 
         if not source or not os.path.isfile(source):
-            self._set_status(self._t2_status, "[ERRO] Selecione um arquivo .exfat válido.", error=True)
+            self._log_append(self._t2_log, "[ERRO] Selecione um arquivo .exfat válido.\n", clear=True)
             return
         if not output:
-            self._set_status(self._t2_status, "[ERRO] Informe o caminho do arquivo de saída.", error=True)
+            self._log_append(self._t2_log, "[ERRO] Informe o caminho do arquivo de saída.\n", clear=True)
             return
 
         cpus = int(self._t2_cpu_slider.get())
         self._t2_btn.configure(state="disabled", text="Convertendo...")
-        self._t2_prog.reset()
-        self._set_status(self._t2_status, "Iniciando...")
+        self._t2_bar.set(0)
+        self._t2_phase_label.configure(text="")
+        self._log_clear(self._t2_log)
         threading.Thread(target=self._t2_run, args=(source, output, cpus), daemon=True).start()
 
     def _t2_run(self, source, output, cpus):
@@ -427,20 +384,24 @@ class App(ctk.CTk):
             source, output,
         ]
 
-        self.after(0, lambda: self._set_status(self._t2_status, "Convertendo..."))
-        success = self._run_cmd(cmd, self._t2_prog)
+        success = self._run_cmd(cmd, self._t2_bar, self._t2_phase_label,
+                                 self._t2_log, step_prefix="")
 
         if success:
-            self.after(0, lambda: self._set_status(self._t2_status, "✓ Conversão concluída com sucesso!"))
+            self.after(0, lambda: self._t2_phase_label.configure(
+                text="✓ Conversão concluída com sucesso!", text_color="#a3e635"))
         else:
-            self.after(0, lambda: self._set_status(self._t2_status, "✗ Conversão falhou.", error=True))
+            self.after(0, lambda: self._t2_phase_label.configure(
+                text="✗ Conversão falhou.", text_color="#f87171"))
 
         self.after(0, lambda: self._t2_btn.configure(state="normal", text="Converter"))
 
     # ──────────────────────────────────────────────────────────
-    #  Core: roda comando e atualiza barras via regex
+    #  Core: roda comando, separa progresso do log
     # ──────────────────────────────────────────────────────────
-    def _run_cmd(self, cmd: list, prog: StepProgress) -> bool:
+    def _run_cmd(self, cmd: list, bar: ctk.CTkProgressBar,
+                 phase_label: ctk.CTkLabel, log: ctk.CTkTextbox,
+                 step_prefix: str) -> bool:
         try:
             proc = subprocess.Popen(
                 cmd,
@@ -452,28 +413,54 @@ class App(ctk.CTk):
                 creationflags=subprocess.CREATE_NO_WINDOW,
             )
             self._active_proc = proc
+
             for line in proc.stdout:
                 m = _RE_PROGRESS.search(line)
                 if m:
-                    pct   = int(m.group(2)) / 100.0
-                    phase = m.group(3).lower()
-                    self.after(0, lambda p=phase, v=pct: prog.update_phase(p, v))
+                    # Linha de progresso → atualiza barra e label, NÃO vai pro log
+                    pct   = int(m.group(1)) / 100.0
+                    phase = m.group(2).capitalize()
+                    label_text = f"{step_prefix} — {phase}  {int(pct * 100)}%" if step_prefix else f"{phase}  {int(pct * 100)}%"
+                    self.after(0, lambda v=pct, t=label_text: (
+                        bar.set(v),
+                        phase_label.configure(text=t, text_color="white"),
+                    ))
+                else:
+                    # Linha real de output → vai pro log
+                    stripped = line.rstrip("\n")
+                    if stripped:
+                        self.after(0, lambda l=stripped: self._log_append(log, l + "\n"))
+
             proc.stdout.close()
             proc.wait()
             self._active_proc = None
             return proc.returncode == 0
         except FileNotFoundError:
+            self.after(0, lambda: self._log_append(log, "[ERRO] mkpfs não encontrado.\n"))
             return False
-        except Exception:
+        except Exception as e:
+            self.after(0, lambda: self._log_append(log, f"[ERRO] {e}\n"))
             return False
 
     # ──────────────────────────────────────────────────────────
-    #  Helpers
+    #  Log helpers
     # ──────────────────────────────────────────────────────────
-    def _set_status(self, label: ctk.CTkLabel, text: str, error: bool = False):
-        color = "#f87171" if error else "#a3e635"
-        label.configure(text=text, text_color=color)
+    def _log_append(self, widget: ctk.CTkTextbox, text: str, clear: bool = False):
+        widget.configure(state="normal")
+        if clear:
+            widget.delete("1.0", "end")
+        widget.insert("end", text)
+        widget.see("end")
+        widget.configure(state="disabled")
 
+    def _log_clear(self, widget: ctk.CTkTextbox):
+        widget.configure(state="normal")
+        widget.delete("1.0", "end")
+        widget.configure(state="disabled")
+
+    # ──────────────────────────────────────────────────────────
+    #  Fechar janela
+    # ──────────────────────────────────────────────────────────
     def _on_close(self):
         if self._active_proc and self._active_proc.poll() is None:
             self._active_proc.terminate()
