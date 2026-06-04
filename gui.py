@@ -9,7 +9,7 @@ from tkinter import filedialog
 ctk.set_appearance_mode("dark")
 ctk.set_default_color_theme("blue")
 
-VERSION = "0.0.1"
+VERSION = "0.0.2"
 
 CONFIG_PATH = os.path.join(os.environ.get("APPDATA", os.path.expanduser("~")), "MkPFS Converter", "config.json")
 

@@ -1,33 +1,77 @@
 # MkPFS Converter
 
-Interface gráfica (GUI) para Windows que automatiza a conversão de pastas em imagens PlayStation FileSystem (PFS) usando o [MkPFS](https://github.com/PSBrew/MkPFS).
+Interface gráfica (GUI) para Windows que automatiza a conversão de arquivos para o formato PlayStation FileSystem (PFS) usando o [MkPFS](https://github.com/PSBrew/MkPFS).
 
 ---
 
-## O que ele faz
+## Versões
 
-Executa dois comandos do `mkpfs` em sequência a partir de uma interface visual simples:
+### v0.0.2
+- Interface dividida em duas abas independentes
+- Nova aba **exfat > ffpfsc**: converte um arquivo `.exfat` diretamente para `.ffpfsc` com um único comando
+- Output preenchido automaticamente com o nome do arquivo de origem ao selecionar o `.exfat`
+- Slider de CPU sincronizado entre as duas abas
+- Log independente por aba
+- Configurações salvas separadamente por aba no `config.json`
+- Processo `mkpfs` encerrado automaticamente ao fechar a janela
+- Janela de console suprimida (sem tela preta ao abrir o `.exe`)
+- Arquivo temporário `pfs_image.dat` removido automaticamente ao final de cada conversão
+
+### v0.0.1
+- Interface gráfica inicial em Python/CustomTkinter
+- Aba **Pasta > ffpfsc**: converte pasta de arquivos em imagem `.ffpfsc` em dois passos
+  - Passo 1: `mkpfs pack folder` gera `pfs_image.dat` intermediário
+  - Passo 2: `mkpfs pack file` converte o intermediário para `.ffpfsc` final
+- Seleção visual de pasta de entrada, arquivo temporário e arquivo de saída
+- Output preenchido automaticamente com o nome da pasta ao selecionar a entrada
+- Slider para escolher quantidade de núcleos de CPU (detecta o total da máquina)
+- Log em tempo real do progresso da conversão
+- Preferências salvas em `%APPDATA%\MkPFS Converter\config.json`
+- `--temp-folder` apontado para o mesmo drive do `pfs_image.dat` para evitar erro de hard link entre drives
+
+---
+
+## Abas
+
+### Pasta > ffpfsc
+
+Converte uma pasta inteira em imagem PFS. Executa dois comandos em sequência:
 
 **Passo 1 — Pack Folder**
 ```
-mkpfs pack folder --verify --no-compress --no-adjust-output-file-extension --version PS5 --inode-bits 32 --cpu-count <N> <pasta_entrada> <pfs_image.dat>
+mkpfs pack folder --no-compress --no-adjust-output-file-extension --version PS5 --inode-bits 32 --cpu-count <N> <pasta_entrada> <pfs_image.dat>
 ```
 
 **Passo 2 — Pack File**
 ```
-mkpfs pack file --verify --version PS5 --inode-bits 32 --cpu-count <N> --temp-folder <dir_temp> <pfs_image.dat> <saida.ffpfsc>
+mkpfs pack file --version PS5 --inode-bits 32 --cpu-count <N> --temp-folder <dir_temp> <pfs_image.dat> <saida.ffpfsc>
+```
+
+### exfat > ffpfsc
+
+Converte um arquivo `.exfat` diretamente para `.ffpfsc`. Executa um único comando:
+
+```
+mkpfs pack file --version PS5 --inode-bits 32 --cpu-count <N> --temp-folder <dir_origem> <arquivo.exfat> <saida.ffpfsc>
 ```
 
 ---
 
-## Funcionalidades
+## Configuração salva
 
-- Seleção visual de pasta de entrada, arquivo temporário e arquivo de saída
-- Slider para escolher quantos núcleos de CPU utilizar (detecta o total da máquina automaticamente)
-- Log em tempo real do progresso da conversão
-- Salva automaticamente os caminhos de temp e output para próximas utilizações (`%APPDATA%\MkPFS Converter\config.json`)
-- Remove o arquivo temporário anterior automaticamente antes de cada conversão
-- O `--temp-folder` do passo 2 é sempre definido no mesmo drive do `pfs_image.dat` para evitar erro de hard link entre drives
+As preferências do usuário são armazenadas em:
+
+```
+C:\Users\<usuario>\AppData\Roaming\MkPFS Converter\config.json
+```
+
+Campos salvos:
+| Campo | Descrição |
+|---|---|
+| `temp_file` | Caminho do arquivo temporário `pfs_image.dat` |
+| `t1_output_dir` | Último diretório de saída da aba Pasta > ffpfsc |
+| `t2_output_dir` | Último diretório de saída da aba exfat > ffpfsc |
+| `cpu_count` | Número de núcleos selecionados no slider |
 
 ---
 
@@ -51,25 +95,10 @@ python gui.py
 
 ```
 pip install pyinstaller
-pyinstaller --onefile --windowed --name "MkPFS Converter" gui.py
+pyinstaller --onefile --windowed --noconsole --name "MkPFS Converter" gui.py
 ```
 
 O executável será gerado em `dist\MkPFS Converter.exe`.
-
----
-
-## Configuração salva
-
-As preferências do usuário são armazenadas em:
-
-```
-C:\Users\<usuario>\AppData\Roaming\MkPFS Converter\config.json
-```
-
-Campos salvos:
-- `temp_file` — caminho do arquivo temporário `pfs_image.dat`
-- `output_dir` — último diretório de saída utilizado
-- `cpu_count` — número de núcleos selecionados no slider
 
 ---
 
