@@ -4,6 +4,7 @@ import threading
 import os
 import re
 import json
+import time
 import multiprocessing
 from tkinter import filedialog
 
@@ -310,6 +311,7 @@ class App(ctk.CTk):
         self._t1_bar.set(0)
         self._t1_phase_label.configure(text="")
         self._log_clear(self._t1_log)
+        self._t1_start_time = time.time()
         threading.Thread(target=self._t1_run, args=(folder, temp, output, cpus), daemon=True).start()
 
     def _t1_run(self, folder, temp, output, cpus):
@@ -344,12 +346,14 @@ class App(ctk.CTk):
             except Exception:
                 pass
 
+        elapsed = time.time() - self._t1_start_time
+        elapsed_str = self._fmt_elapsed(elapsed)
         if success:
-            self.after(0, lambda: self._t1_phase_label.configure(
-                text="✓ Conversão concluída com sucesso!", text_color="#a3e635"))
+            self.after(0, lambda s=elapsed_str: self._t1_phase_label.configure(
+                text=f"✓ Concluído em {s}", text_color="#a3e635"))
         else:
-            self.after(0, lambda: self._t1_phase_label.configure(
-                text="✗ Conversão falhou.", text_color="#f87171"))
+            self.after(0, lambda s=elapsed_str: self._t1_phase_label.configure(
+                text=f"✗ Falhou após {s}", text_color="#f87171"))
 
         self.after(0, lambda: self._t1_btn.configure(state="normal", text="Converter"))
 
@@ -372,6 +376,7 @@ class App(ctk.CTk):
         self._t2_bar.set(0)
         self._t2_phase_label.configure(text="")
         self._log_clear(self._t2_log)
+        self._t2_start_time = time.time()
         threading.Thread(target=self._t2_run, args=(source, output, cpus), daemon=True).start()
 
     def _t2_run(self, source, output, cpus):
@@ -387,12 +392,14 @@ class App(ctk.CTk):
         success = self._run_cmd(cmd, self._t2_bar, self._t2_phase_label,
                                  self._t2_log, step_prefix="")
 
+        elapsed = time.time() - self._t2_start_time
+        elapsed_str = self._fmt_elapsed(elapsed)
         if success:
-            self.after(0, lambda: self._t2_phase_label.configure(
-                text="✓ Conversão concluída com sucesso!", text_color="#a3e635"))
+            self.after(0, lambda s=elapsed_str: self._t2_phase_label.configure(
+                text=f"✓ Concluído em {s}", text_color="#a3e635"))
         else:
-            self.after(0, lambda: self._t2_phase_label.configure(
-                text="✗ Conversão falhou.", text_color="#f87171"))
+            self.after(0, lambda s=elapsed_str: self._t2_phase_label.configure(
+                text=f"✗ Falhou após {s}", text_color="#f87171"))
 
         self.after(0, lambda: self._t2_btn.configure(state="normal", text="Converter"))
 
@@ -457,6 +464,16 @@ class App(ctk.CTk):
         widget.configure(state="normal")
         widget.delete("1.0", "end")
         widget.configure(state="disabled")
+
+    def _fmt_elapsed(self, seconds: float) -> str:
+        seconds = int(seconds)
+        h, rem = divmod(seconds, 3600)
+        m, s = divmod(rem, 60)
+        if h:
+            return f"{h}h {m:02d}m {s:02d}s"
+        if m:
+            return f"{m}m {s:02d}s"
+        return f"{s}s"
 
     # ──────────────────────────────────────────────────────────
     #  Fechar janela
