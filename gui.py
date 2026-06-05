@@ -19,6 +19,12 @@ else:
 _PS1_PATH       = os.path.join(_BUNDLE_DIR, "New-OsfExfatImage.ps1")
 _OSFMOUNT_SETUP = os.path.join(_BUNDLE_DIR, "osfmount_setup.exe")
 
+# Quando frozen, usa o mkpfs_cli.exe embutido; caso contrário usa o mkpfs do PATH
+if getattr(sys, "frozen", False):
+    _MKPFS = os.path.join(_BUNDLE_DIR, "mkpfs_cli.exe")
+else:
+    _MKPFS = "mkpfs"
+
 # Caminhos padrão onde o OSFMount pode estar instalado
 _OSFMOUNT_CANDIDATES = [
     r"C:\Program Files\OSFMount\osfmount.com",
@@ -548,11 +554,11 @@ class App(ctk.CTk):
 
     def _t1_run(self, folder, temp, output, cpus):
         if os.path.exists(temp): os.remove(temp)
-        cmd1 = ["mkpfs", "pack", "folder", "--no-compress", "--no-adjust-output-file-extension",
+        cmd1 = [_MKPFS, "pack", "folder", "--no-compress", "--no-adjust-output-file-extension",
                 "--version", "PS5", "--inode-bits", "32", "--cpu-count", str(cpus), folder, temp]
         staging_dir = os.path.join(os.path.dirname(os.path.abspath(temp)), "_mkpfs_staging")
         os.makedirs(staging_dir, exist_ok=True)
-        cmd2 = ["mkpfs", "pack", "file", "--version", "PS5", "--inode-bits", "32",
+        cmd2 = [_MKPFS, "pack", "file", "--version", "PS5", "--inode-bits", "32",
                 "--cpu-count", str(cpus), "--temp-folder", staging_dir, temp, output]
         success = self._run_cmd(cmd1, self._t1_bar, self._t1_phase_label, self._t1_log, "Passo 1/2")
         if success:
@@ -583,7 +589,7 @@ class App(ctk.CTk):
     def _t2_run(self, source, output, cpus):
         staging_dir = os.path.join(os.path.dirname(os.path.abspath(source)), "_mkpfs_staging")
         os.makedirs(staging_dir, exist_ok=True)
-        cmd = ["mkpfs", "pack", "file", "--version", "PS5", "--inode-bits", "32",
+        cmd = [_MKPFS, "pack", "file", "--version", "PS5", "--inode-bits", "32",
                "--cpu-count", str(cpus), "--temp-folder", staging_dir, source, output]
         success = self._run_cmd(cmd, self._t2_bar, self._t2_phase_label, self._t2_log, "")
         shutil.rmtree(staging_dir, ignore_errors=True)
@@ -655,7 +661,7 @@ class App(ctk.CTk):
             # Passo 2: exfat > ffpfsc
             staging_dir = os.path.join(tmp_dir, "_mkpfs_staging")
             os.makedirs(staging_dir, exist_ok=True)
-            cmd_mkpfs = ["mkpfs", "pack", "file", "--version", "PS5", "--inode-bits", "32",
+            cmd_mkpfs = [_MKPFS, "pack", "file", "--version", "PS5", "--inode-bits", "32",
                          "--cpu-count", str(cpus), "--temp-folder", staging_dir, exfat_tmp, output]
             success = self._run_cmd(cmd_mkpfs, self._t4_bar, self._t4_phase_label,
                                      self._t4_log, "Passo 2/2")
@@ -691,7 +697,7 @@ class App(ctk.CTk):
             self._active_proc = None
             return proc.returncode == 0
         except FileNotFoundError:
-            self.after(0, lambda: self._log_append(log, "[ERRO] mkpfs não encontrado.\n"))
+            self.after(0, lambda: self._log_append(log, f"[ERRO] mkpfs não encontrado: {_MKPFS}\n"))
             return False
         except Exception as e:
             self.after(0, lambda: self._log_append(log, f"[ERRO] {e}\n"))
