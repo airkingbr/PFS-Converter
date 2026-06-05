@@ -3,11 +3,40 @@ import subprocess
 import threading
 import os
 import re
+import sys
 import json
 import time
 import shutil
 import multiprocessing
 from tkinter import filedialog
+
+# Localiza o New-OsfExfatImage.ps1 (dentro do .exe ou ao lado do .py)
+if getattr(sys, "frozen", False):
+    _PS1_PATH = os.path.join(sys._MEIPASS, "New-OsfExfatImage.ps1")
+else:
+    _PS1_PATH = os.path.join(os.path.dirname(os.path.abspath(__file__)), "New-OsfExfatImage.ps1")
+
+# Caminhos padrão onde o OSFMount pode estar instalado
+_OSFMOUNT_CANDIDATES = [
+    r"C:\Program Files\OSFMount\osfmount.com",
+    r"C:\Program Files (x86)\OSFMount\osfmount.com",
+    r"C:\Program Files\PassMark\OSFMount\osfmount.com",
+    r"C:\Program Files (x86)\PassMark\OSFMount\osfmount.com",
+]
+
+def _find_osfmount() -> str | None:
+    for p in _OSFMOUNT_CANDIDATES:
+        if os.path.isfile(p):
+            return p
+    # tenta no PATH
+    for folder in os.environ.get("PATH", "").split(os.pathsep):
+        candidate = os.path.join(folder, "osfmount.com")
+        if os.path.isfile(candidate):
+            return candidate
+    return None
+
+# Regex para as etapas do script PS1: [1/4], [2/4], [3/4], [4/4]
+_RE_PS1_STEP = re.compile(r"\[(\d+)/(\d+)\]")
 
 ctk.set_appearance_mode("dark")
 ctk.set_default_color_theme("blue")
@@ -58,6 +87,9 @@ class App(ctk.CTk):
         self._t2_source_file  = ctk.StringVar()
         self._t2_output_file  = ctk.StringVar(value=cfg.get("t2_output_dir", ""))
 
+        self._t3_input_folder = ctk.StringVar()
+        self._t3_output_file  = ctk.StringVar(value=cfg.get("t3_output_dir", ""))
+
         self._build_ui()
 
     # ──────────────────────────────────────────────────────────
@@ -73,9 +105,11 @@ class App(ctk.CTk):
         self._tabs.pack(fill="both", expand=True, padx=16, pady=(0, 16))
         self._tabs.add("Pasta > ffpfsc")
         self._tabs.add("exfat > ffpfsc")
+        self._tabs.add("Pasta > exfat")
 
         self._build_tab1(self._tabs.tab("Pasta > ffpfsc"))
         self._build_tab2(self._tabs.tab("exfat > ffpfsc"))
+        self._build_tab3(self._tabs.tab("Pasta > exfat"))
 
     # ──────────────────────────────────────────────────────────
     #  Tab 1
@@ -204,6 +238,59 @@ class App(ctk.CTk):
                                        state="disabled")
         self._t2_log.pack(fill="both", expand=True, padx=16, pady=(0, 10))
 
+    # ──────────────────────────────────────────────────────────
+    #  Tab 3 — Pasta > exfat
+    # ──────────────────────────────────────────────────────────
+    def _build_tab3(self, parent):
+        pad = {"padx": 16, "pady": (8, 0)}
+
+        # Aviso OSFMount
+        osf = _find_osfmount()
+        osf_color = "#a3e635" if osf else "#f87171"
+        osf_text  = f"✓ OSFMount encontrado" if osf else "✗ OSFMount não encontrado — instale em passmark.com/products/OSFMount"
+        ctk.CTkLabel(parent, text=osf_text, anchor="w",
+                     text_color=osf_color,
+                     font=ctk.CTkFont(size=11)).pack(fill="x", padx=16, pady=(10, 0))
+
+        self._tab_section(parent, "Pasta de entrada")
+        r1 = ctk.CTkFrame(parent, fg_color="transparent")
+        r1.pack(fill="x", **pad)
+        ctk.CTkEntry(r1, textvariable=self._t3_input_folder,
+                     placeholder_text="Selecione a pasta a converter...",
+                     width=490).pack(side="left", padx=(0, 8))
+        ctk.CTkButton(r1, text="Selecionar", width=110,
+                      command=self._t3_pick_folder).pack(side="left")
+
+        self._tab_section(parent, "Arquivo de saída (.exfat)")
+        r2 = ctk.CTkFrame(parent, fg_color="transparent")
+        r2.pack(fill="x", **pad)
+        ctk.CTkEntry(r2, textvariable=self._t3_output_file,
+                     placeholder_text="Nome e local do arquivo .exfat...",
+                     width=490).pack(side="left", padx=(0, 8))
+        ctk.CTkButton(r2, text="Selecionar", width=110,
+                      command=self._t3_pick_output).pack(side="left")
+
+        # Botão
+        self._t3_btn = ctk.CTkButton(parent, text="Converter", height=40,
+                                     font=ctk.CTkFont(size=14, weight="bold"),
+                                     command=self._t3_start)
+        self._t3_btn.pack(pady=(18, 0), padx=16, fill="x")
+
+        # Progresso
+        self._t3_phase_label = ctk.CTkLabel(parent, text="", anchor="w",
+                                             font=ctk.CTkFont(size=12))
+        self._t3_phase_label.pack(fill="x", padx=16, pady=(10, 2))
+        self._t3_bar = ctk.CTkProgressBar(parent, height=18)
+        self._t3_bar.set(0)
+        self._t3_bar.pack(fill="x", padx=16)
+
+        # Log
+        ctk.CTkLabel(parent, text="Log", anchor="w").pack(fill="x", padx=16, pady=(10, 2))
+        self._t3_log = ctk.CTkTextbox(parent, height=200,
+                                       font=ctk.CTkFont(family="Courier New", size=11),
+                                       state="disabled")
+        self._t3_log.pack(fill="both", expand=True, padx=16, pady=(0, 10))
+
     def _tab_section(self, parent, title):
         ctk.CTkLabel(parent, text=title, anchor="w",
                      font=ctk.CTkFont(weight="bold")).pack(fill="x", padx=16, pady=(12, 2))
@@ -288,6 +375,80 @@ class App(ctk.CTk):
                 path = os.path.splitext(path)[0] + ".ffpfsc"
             self._t2_output_file.set(path)
             _save_config({**_load_config(), "t2_output_dir": os.path.dirname(path)})
+
+    # ──────────────────────────────────────────────────────────
+    #  Tab 3 — pickers
+    # ──────────────────────────────────────────────────────────
+    def _t3_pick_folder(self):
+        path = filedialog.askdirectory(title="Selecione a pasta de entrada")
+        if path:
+            self._t3_input_folder.set(path)
+            folder_name = os.path.basename(path.rstrip("/\\"))
+            output_dir = os.path.dirname(self._t3_output_file.get()) if self._t3_output_file.get() else path
+            self._t3_output_file.set(os.path.join(output_dir, f"{folder_name}.exfat"))
+
+    def _t3_pick_output(self):
+        current = self._t3_output_file.get()
+        path = filedialog.asksaveasfilename(
+            title="Salvar arquivo .exfat como",
+            defaultextension=".exfat",
+            filetypes=[("exFAT image", "*.exfat"), ("All files", "*.*")],
+            initialdir=os.path.dirname(current) if current else None,
+        )
+        if path:
+            if not path.endswith(".exfat"):
+                path = os.path.splitext(path)[0] + ".exfat"
+            self._t3_output_file.set(path)
+            _save_config({**_load_config(), "t3_output_dir": os.path.dirname(path)})
+
+    # ──────────────────────────────────────────────────────────
+    #  Tab 3 — conversão
+    # ──────────────────────────────────────────────────────────
+    def _t3_start(self):
+        folder = self._t3_input_folder.get().strip()
+        output = self._t3_output_file.get().strip()
+
+        if not folder or not os.path.isdir(folder):
+            self._log_append(self._t3_log, "[ERRO] Selecione uma pasta de entrada válida.\n", clear=True)
+            return
+        if not output:
+            self._log_append(self._t3_log, "[ERRO] Informe o caminho do arquivo de saída.\n", clear=True)
+            return
+        if not _find_osfmount():
+            self._log_append(self._t3_log,
+                "[ERRO] OSFMount não encontrado.\n"
+                "Instale em: https://www.passmark.com/products/OSFMount\n", clear=True)
+            return
+
+        self._t3_btn.configure(state="disabled", text="Convertendo...")
+        self._t3_bar.set(0)
+        self._t3_phase_label.configure(text="")
+        self._log_clear(self._t3_log)
+        self._t3_start_time = time.time()
+        threading.Thread(target=self._t3_run, args=(folder, output), daemon=True).start()
+
+    def _t3_run(self, folder: str, output: str):
+        cmd = [
+            "powershell.exe",
+            "-NoProfile", "-ExecutionPolicy", "Bypass",
+            "-File", _PS1_PATH,
+            "-ImagePath", output,
+            "-SourceDir", folder,
+            "-ForceOverwrite",
+        ]
+
+        success = self._run_cmd_ps1(cmd, self._t3_bar, self._t3_phase_label, self._t3_log)
+
+        elapsed = time.time() - self._t3_start_time
+        elapsed_str = self._fmt_elapsed(elapsed)
+        if success:
+            self.after(0, lambda s=elapsed_str: self._t3_phase_label.configure(
+                text=f"✓ Concluído em {s}", text_color="#a3e635"))
+        else:
+            self.after(0, lambda s=elapsed_str: self._t3_phase_label.configure(
+                text=f"✗ Falhou após {s}", text_color="#f87171"))
+
+        self.after(0, lambda: self._t3_btn.configure(state="normal", text="Converter"))
 
     # ──────────────────────────────────────────────────────────
     #  Tab 1 — conversão
@@ -452,6 +613,53 @@ class App(ctk.CTk):
         except FileNotFoundError:
             self.after(0, lambda: self._log_append(log, "[ERRO] mkpfs não encontrado.\n"))
             return False
+        except Exception as e:
+            self.after(0, lambda: self._log_append(log, f"[ERRO] {e}\n"))
+            return False
+
+    # ──────────────────────────────────────────────────────────
+    #  Core PS1: roda PowerShell, parseia [N/Total] para a barra
+    # ──────────────────────────────────────────────────────────
+    def _run_cmd_ps1(self, cmd: list, bar: ctk.CTkProgressBar,
+                     phase_label: ctk.CTkLabel, log: ctk.CTkTextbox) -> bool:
+        step_labels = {
+            1: "Criando e montando imagem...",
+            2: "Formatando exFAT...",
+            3: "Copiando arquivos...",
+            4: "Desmontando volume...",
+        }
+        try:
+            proc = subprocess.Popen(
+                cmd,
+                stdout=subprocess.PIPE,
+                stderr=subprocess.STDOUT,
+                text=True,
+                encoding="utf-8",
+                errors="replace",
+                creationflags=subprocess.CREATE_NO_WINDOW,
+            )
+            self._active_proc = proc
+
+            for line in proc.stdout:
+                stripped = line.rstrip("\n")
+                if not stripped:
+                    continue
+                m = _RE_PS1_STEP.search(stripped)
+                if m:
+                    step  = int(m.group(1))
+                    total = int(m.group(2))
+                    pct   = step / total
+                    label = step_labels.get(step, stripped)
+                    self.after(0, lambda v=pct, t=label: (
+                        bar.set(v),
+                        phase_label.configure(text=t, text_color="white"),
+                    ))
+                self.after(0, lambda l=stripped: self._log_append(log, l + "\n"))
+
+            proc.stdout.close()
+            proc.wait()
+            self._active_proc = None
+            return proc.returncode == 0
         except Exception as e:
             self.after(0, lambda: self._log_append(log, f"[ERRO] {e}\n"))
             return False
