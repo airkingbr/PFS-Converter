@@ -96,6 +96,7 @@ class App(ctk.CTk):
 
         # Tab 4 — Dump > exfat > ffpfsc
         self._t4_input_folder = ctk.StringVar()
+        self._t4_temp_folder  = ctk.StringVar(value=cfg.get("t4_temp_folder", ""))
         self._t4_output_file  = ctk.StringVar(value=cfg.get("t4_output_dir", ""))
 
         self._build_ui()
@@ -309,13 +310,22 @@ class App(ctk.CTk):
         ctk.CTkButton(r1, text="Selecionar", width=110,
                       command=self._t4_pick_folder).pack(side="left")
 
-        self._tab_section(parent, "Arquivo de saída (.ffpfsc)")
+        self._tab_section(parent, "Pasta para arquivos temporários")
         r2 = ctk.CTkFrame(parent, fg_color="transparent")
         r2.pack(fill="x", **pad)
-        ctk.CTkEntry(r2, textvariable=self._t4_output_file,
-                     placeholder_text="Nome e local do arquivo final .ffpfsc...",
+        ctk.CTkEntry(r2, textvariable=self._t4_temp_folder,
+                     placeholder_text="Onde salvar o .exfat e .dat temporários...",
                      width=490).pack(side="left", padx=(0, 8))
         ctk.CTkButton(r2, text="Selecionar", width=110,
+                      command=self._t4_pick_temp_folder).pack(side="left")
+
+        self._tab_section(parent, "Arquivo de saída (.ffpfsc)")
+        r3 = ctk.CTkFrame(parent, fg_color="transparent")
+        r3.pack(fill="x", **pad)
+        ctk.CTkEntry(r3, textvariable=self._t4_output_file,
+                     placeholder_text="Nome e local do arquivo final .ffpfsc...",
+                     width=490).pack(side="left", padx=(0, 8))
+        ctk.CTkButton(r3, text="Selecionar", width=110,
                       command=self._t4_pick_output).pack(side="left")
 
         self._tab_section(parent, "Núcleos de CPU")
@@ -496,6 +506,12 @@ class App(ctk.CTk):
             out_dir = os.path.dirname(self._t4_output_file.get()) if self._t4_output_file.get() else path
             self._t4_output_file.set(os.path.join(out_dir, f"{name}.ffpfsc"))
 
+    def _t4_pick_temp_folder(self):
+        path = filedialog.askdirectory(title="Selecione a pasta para arquivos temporários")
+        if path:
+            self._t4_temp_folder.set(path)
+            _save_config({**_load_config(), "t4_temp_folder": path})
+
     def _t4_pick_output(self):
         current = self._t4_output_file.get()
         path = filedialog.asksaveasfilename(
@@ -601,10 +617,13 @@ class App(ctk.CTk):
     #  Tab 4 — conversão Dump > exfat > ffpfsc
     # ──────────────────────────────────────────────────────────
     def _t4_start(self):
-        folder = self._t4_input_folder.get().strip()
-        output = self._t4_output_file.get().strip()
+        folder  = self._t4_input_folder.get().strip()
+        tmp_dir = self._t4_temp_folder.get().strip()
+        output  = self._t4_output_file.get().strip()
         if not folder or not os.path.isdir(folder):
             self._log_append(self._t4_log, "[ERRO] Selecione um dump válido.\n", clear=True); return
+        if not tmp_dir:
+            self._log_append(self._t4_log, "[ERRO] Informe a pasta para arquivos temporários.\n", clear=True); return
         if not output:
             self._log_append(self._t4_log, "[ERRO] Informe o caminho do arquivo de saída.\n", clear=True); return
         if not _find_osfmount():
@@ -614,14 +633,14 @@ class App(ctk.CTk):
         self._t4_bar.set(0); self._t4_phase_label.configure(text="")
         self._log_clear(self._t4_log)
         self._t4_start_time = time.time()
-        threading.Thread(target=self._t4_run, args=(folder, output, cpus), daemon=True).start()
+        threading.Thread(target=self._t4_run, args=(folder, tmp_dir, output, cpus), daemon=True).start()
 
-    def _t4_run(self, folder, output, cpus):
+    def _t4_run(self, folder, tmp_dir, output, cpus):
         name = os.path.basename(folder.rstrip("/\\"))
-        out_dir = os.path.dirname(os.path.abspath(output))
+        os.makedirs(tmp_dir, exist_ok=True)
 
-        # Arquivo .exfat temporário na mesma pasta do output
-        exfat_tmp = os.path.join(out_dir, f"_tmp_{name}.exfat")
+        # .exfat temporário na pasta escolhida pelo usuário (nunca dentro do dump)
+        exfat_tmp = os.path.join(tmp_dir, f"{name}.exfat")
 
         # Passo 1: Dump > exfat
         self.after(0, lambda: self._t4_phase_label.configure(
@@ -634,7 +653,7 @@ class App(ctk.CTk):
 
         if success:
             # Passo 2: exfat > ffpfsc
-            staging_dir = os.path.join(out_dir, "_mkpfs_staging")
+            staging_dir = os.path.join(tmp_dir, "_mkpfs_staging")
             os.makedirs(staging_dir, exist_ok=True)
             cmd_mkpfs = ["mkpfs", "pack", "file", "--version", "PS5", "--inode-bits", "32",
                          "--cpu-count", str(cpus), "--temp-folder", staging_dir, exfat_tmp, output]
