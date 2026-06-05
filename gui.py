@@ -95,6 +95,10 @@ class App(ctk.CTk):
 
         self._build_ui()
 
+        # Instala OSFMount silenciosamente se não estiver presente
+        if not _find_osfmount():
+            threading.Thread(target=self._auto_install_osfmount, daemon=True).start()
+
     # ──────────────────────────────────────────────────────────
     #  UI principal
     # ──────────────────────────────────────────────────────────
@@ -388,7 +392,32 @@ class App(ctk.CTk):
             _save_config({**_load_config(), "t2_output_dir": os.path.dirname(path)})
 
     # ──────────────────────────────────────────────────────────
-    #  Tab 3 — instalar OSFMount
+    #  OSFMount — instalação automática na inicialização
+    # ──────────────────────────────────────────────────────────
+    def _auto_install_osfmount(self):
+        """Chamado na inicialização se OSFMount não for encontrado."""
+        if not os.path.isfile(_OSFMOUNT_SETUP):
+            return
+        self.after(0, lambda: self._t3_osf_label.configure(
+            text="⏳ Instalando OSFMount...", text_color="white"))
+        try:
+            proc = subprocess.Popen(
+                [_OSFMOUNT_SETUP, "/VERYSILENT", "/SUPPRESSMSGBOXES", "/NORESTART"],
+                creationflags=subprocess.CREATE_NO_WINDOW,
+            )
+            proc.wait()
+            if _find_osfmount():
+                self.after(0, lambda: self._t3_osf_label.configure(
+                    text="✓ OSFMount instalado com sucesso!", text_color="#a3e635"))
+            else:
+                self.after(0, lambda: self._t3_osf_label.configure(
+                    text="✗ Instalação falhou. Tente manualmente.", text_color="#f87171"))
+        except Exception as e:
+            self.after(0, lambda: self._t3_osf_label.configure(
+                text=f"✗ Erro na instalação: {e}", text_color="#f87171"))
+
+    # ──────────────────────────────────────────────────────────
+    #  Tab 3 — instalar OSFMount (botão manual)
     # ──────────────────────────────────────────────────────────
     def _t3_install_osfmount(self):
         if not os.path.isfile(_OSFMOUNT_SETUP):
@@ -401,7 +430,7 @@ class App(ctk.CTk):
     def _t3_run_install(self):
         try:
             proc = subprocess.Popen(
-                [_OSFMOUNT_SETUP],
+                [_OSFMOUNT_SETUP, "/VERYSILENT", "/SUPPRESSMSGBOXES", "/NORESTART"],
                 creationflags=subprocess.CREATE_NO_WINDOW,
             )
             proc.wait()
