@@ -10,11 +10,14 @@ import shutil
 import multiprocessing
 from tkinter import filedialog
 
-# Localiza o New-OsfExfatImage.ps1 (dentro do .exe ou ao lado do .py)
+# Localiza arquivos embutidos (dentro do .exe ou ao lado do .py)
 if getattr(sys, "frozen", False):
-    _PS1_PATH = os.path.join(sys._MEIPASS, "New-OsfExfatImage.ps1")
+    _BUNDLE_DIR = sys._MEIPASS
 else:
-    _PS1_PATH = os.path.join(os.path.dirname(os.path.abspath(__file__)), "New-OsfExfatImage.ps1")
+    _BUNDLE_DIR = os.path.dirname(os.path.abspath(__file__))
+
+_PS1_PATH          = os.path.join(_BUNDLE_DIR, "New-OsfExfatImage.ps1")
+_OSFMOUNT_SETUP    = os.path.join(_BUNDLE_DIR, "osfmount_setup.exe")
 
 # Caminhos padrão onde o OSFMount pode estar instalado
 _OSFMOUNT_CANDIDATES = [
@@ -244,13 +247,21 @@ class App(ctk.CTk):
     def _build_tab3(self, parent):
         pad = {"padx": 16, "pady": (8, 0)}
 
-        # Aviso OSFMount
+        # Painel de status do OSFMount
+        osf_row = ctk.CTkFrame(parent, fg_color="transparent")
+        osf_row.pack(fill="x", padx=16, pady=(10, 0))
+
         osf = _find_osfmount()
         osf_color = "#a3e635" if osf else "#f87171"
-        osf_text  = f"✓ OSFMount encontrado" if osf else "✗ OSFMount não encontrado — instale em passmark.com/products/OSFMount"
-        ctk.CTkLabel(parent, text=osf_text, anchor="w",
-                     text_color=osf_color,
-                     font=ctk.CTkFont(size=11)).pack(fill="x", padx=16, pady=(10, 0))
+        osf_text  = "✓ OSFMount instalado" if osf else "✗ OSFMount não encontrado"
+        self._t3_osf_label = ctk.CTkLabel(osf_row, text=osf_text, anchor="w",
+                                           text_color=osf_color,
+                                           font=ctk.CTkFont(size=11))
+        self._t3_osf_label.pack(side="left")
+
+        if not osf:
+            ctk.CTkButton(osf_row, text="Instalar OSFMount", width=150, height=26,
+                          command=self._t3_install_osfmount).pack(side="right")
 
         self._tab_section(parent, "Pasta de entrada")
         r1 = ctk.CTkFrame(parent, fg_color="transparent")
@@ -375,6 +386,35 @@ class App(ctk.CTk):
                 path = os.path.splitext(path)[0] + ".ffpfsc"
             self._t2_output_file.set(path)
             _save_config({**_load_config(), "t2_output_dir": os.path.dirname(path)})
+
+    # ──────────────────────────────────────────────────────────
+    #  Tab 3 — instalar OSFMount
+    # ──────────────────────────────────────────────────────────
+    def _t3_install_osfmount(self):
+        if not os.path.isfile(_OSFMOUNT_SETUP):
+            self._t3_osf_label.configure(
+                text="✗ Instalador não encontrado no pacote.", text_color="#f87171")
+            return
+        self._t3_osf_label.configure(text="Instalando OSFMount...", text_color="white")
+        threading.Thread(target=self._t3_run_install, daemon=True).start()
+
+    def _t3_run_install(self):
+        try:
+            proc = subprocess.Popen(
+                [_OSFMOUNT_SETUP],
+                creationflags=subprocess.CREATE_NO_WINDOW,
+            )
+            proc.wait()
+            # Verifica se foi instalado com sucesso
+            if _find_osfmount():
+                self.after(0, lambda: self._t3_osf_label.configure(
+                    text="✓ OSFMount instalado com sucesso!", text_color="#a3e635"))
+            else:
+                self.after(0, lambda: self._t3_osf_label.configure(
+                    text="✗ Instalação cancelada ou falhou.", text_color="#f87171"))
+        except Exception as e:
+            self.after(0, lambda: self._t3_osf_label.configure(
+                text=f"✗ Erro ao instalar: {e}", text_color="#f87171"))
 
     # ──────────────────────────────────────────────────────────
     #  Tab 3 — pickers
