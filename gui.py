@@ -554,6 +554,7 @@ class App(ctk.CTk):
 
     def _t1_run(self, folder, temp, output, cpus):
         if os.path.exists(temp): os.remove(temp)
+        if os.path.exists(output): os.remove(output)
         cmd1 = [_MKPFS, "pack", "folder", "--no-compress", "--no-adjust-output-file-extension",
                 "--version", "PS5", "--inode-bits", "32", "--cpu-count", str(cpus), folder, temp]
         staging_dir = os.path.join(os.path.dirname(os.path.abspath(temp)), "_mkpfs_staging")
@@ -587,6 +588,7 @@ class App(ctk.CTk):
         threading.Thread(target=self._t2_run, args=(source, output, cpus), daemon=True).start()
 
     def _t2_run(self, source, output, cpus):
+        if os.path.exists(output): os.remove(output)
         staging_dir = os.path.join(os.path.dirname(os.path.abspath(source)), "_mkpfs_staging")
         os.makedirs(staging_dir, exist_ok=True)
         cmd = [_MKPFS, "pack", "file", "--version", "PS5", "--inode-bits", "32",
@@ -659,6 +661,7 @@ class App(ctk.CTk):
 
         if success:
             # Passo 2: exfat > ffpfsc
+            if os.path.exists(output): os.remove(output)
             staging_dir = os.path.join(tmp_dir, "_mkpfs_staging")
             os.makedirs(staging_dir, exist_ok=True)
             cmd_mkpfs = [_MKPFS, "pack", "file", "--version", "PS5", "--inode-bits", "32",
