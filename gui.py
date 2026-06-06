@@ -126,15 +126,15 @@ class App(ctk.CTk):
 
         self._tabs = ctk.CTkTabview(self)
         self._tabs.pack(fill="both", expand=True, padx=16, pady=(0, 16))
-        self._tabs.add("📂 › ffpfsc")
-        self._tabs.add("💾 › ffpfsc")
-        self._tabs.add("📂 › exfat")
-        self._tabs.add("📂 › exfat › ffpfsc")
+        self._tabs.add("Dump > ffpfsc")
+        self._tabs.add("exfat > ffpfsc")
+        self._tabs.add("Dump > exfat")
+        self._tabs.add("Dump > exfat > ffpfsc")
 
-        self._build_tab1(self._tabs.tab("📂 › ffpfsc"))
-        self._build_tab2(self._tabs.tab("💾 › ffpfsc"))
-        self._build_tab3(self._tabs.tab("📂 › exfat"))
-        self._build_tab4(self._tabs.tab("📂 › exfat › ffpfsc"))
+        self._build_tab1(self._tabs.tab("Dump > ffpfsc"))
+        self._build_tab2(self._tabs.tab("exfat > ffpfsc"))
+        self._build_tab3(self._tabs.tab("Dump > exfat"))
+        self._build_tab4(self._tabs.tab("Dump > exfat > ffpfsc"))
 
     # ──────────────────────────────────────────────────────────
     #  Tab 1 — Dump > ffpfsc
@@ -142,34 +142,34 @@ class App(ctk.CTk):
     def _build_tab1(self, parent):
         pad = {"padx": 16, "pady": (8, 0)}
 
-        self._tab_section(parent, "📂  Dump de entrada")
+        self._tab_section(parent, "Passo 1 — Dump de entrada")
         r1 = ctk.CTkFrame(parent, fg_color="transparent")
         r1.pack(fill="x", **pad)
         ctk.CTkEntry(r1, textvariable=self._t1_input_folder,
                      placeholder_text="Selecione o dump...",
                      width=490).pack(side="left", padx=(0, 8))
-        ctk.CTkButton(r1, text="📁  Selecionar", width=120,
+        ctk.CTkButton(r1, text="Selecionar", width=110,
                       command=self._t1_pick_folder).pack(side="left")
 
-        self._tab_section(parent, "⏳  Arquivo temporário (pfs_image.dat)")
+        self._tab_section(parent, "Passo 2 — Arquivo temporário (pfs_image.dat)")
         r2 = ctk.CTkFrame(parent, fg_color="transparent")
         r2.pack(fill="x", **pad)
         ctk.CTkEntry(r2, textvariable=self._t1_temp_file,
                      placeholder_text="Onde salvar pfs_image.dat...",
                      width=490).pack(side="left", padx=(0, 8))
-        ctk.CTkButton(r2, text="📁  Selecionar", width=120,
+        ctk.CTkButton(r2, text="Selecionar", width=110,
                       command=self._t1_pick_temp).pack(side="left")
 
-        self._tab_section(parent, "💾  Arquivo de saída (.ffpfsc)")
+        self._tab_section(parent, "Passo 3 — Arquivo de saída (.ffpfsc)")
         r3 = ctk.CTkFrame(parent, fg_color="transparent")
         r3.pack(fill="x", **pad)
         ctk.CTkEntry(r3, textvariable=self._t1_output_file,
                      placeholder_text="Nome e local do arquivo final .ffpfsc...",
                      width=490).pack(side="left", padx=(0, 8))
-        ctk.CTkButton(r3, text="💾  Salvar como", width=120,
+        ctk.CTkButton(r3, text="Selecionar", width=110,
                       command=self._t1_pick_output).pack(side="left")
 
-        self._tab_section(parent, "⚙️  Núcleos de CPU")
+        self._tab_section(parent, "Núcleos de CPU")
         cpu_row = ctk.CTkFrame(parent, fg_color="transparent")
         cpu_row.pack(fill="x", padx=16, pady=(4, 0))
         self._t1_cpu_label = ctk.CTkLabel(cpu_row, text=f"{self._saved_cpus} / {self._cpu_count}", width=60)
@@ -180,7 +180,7 @@ class App(ctk.CTk):
         self._t1_cpu_slider.set(self._saved_cpus)
         self._t1_cpu_slider.pack(side="left", fill="x", expand=True, padx=(0, 12))
 
-        self._t1_btn = ctk.CTkButton(parent, text="▶   Converter", height=40,
+        self._t1_btn = ctk.CTkButton(parent, text="Converter", height=40,
                                      font=ctk.CTkFont(size=14, weight="bold"),
                                      command=self._t1_start)
         self._t1_btn.pack(pady=(14, 0), padx=16, fill="x")
@@ -191,7 +191,7 @@ class App(ctk.CTk):
         self._t1_bar.set(0)
         self._t1_bar.pack(fill="x", padx=16)
 
-        ctk.CTkLabel(parent, text="📋  Log", anchor="w").pack(fill="x", padx=16, pady=(10, 2))
+        ctk.CTkLabel(parent, text="Log", anchor="w").pack(fill="x", padx=16, pady=(10, 2))
         self._t1_log = ctk.CTkTextbox(parent, height=200, font=ctk.CTkFont(family="Courier New", size=11), state="disabled")
         self._t1_log.pack(fill="both", expand=True, padx=16, pady=(0, 10))
 
@@ -201,25 +201,25 @@ class App(ctk.CTk):
     def _build_tab2(self, parent):
         pad = {"padx": 16, "pady": (8, 0)}
 
-        self._tab_section(parent, "💾  Arquivo de origem (.exfat)")
+        self._tab_section(parent, "Arquivo de origem (.exfat)")
         r1 = ctk.CTkFrame(parent, fg_color="transparent")
         r1.pack(fill="x", **pad)
         ctk.CTkEntry(r1, textvariable=self._t2_source_file,
                      placeholder_text="Selecione o arquivo .exfat...",
                      width=490).pack(side="left", padx=(0, 8))
-        ctk.CTkButton(r1, text="📁  Selecionar", width=120,
+        ctk.CTkButton(r1, text="Selecionar", width=110,
                       command=self._t2_pick_source).pack(side="left")
 
-        self._tab_section(parent, "💾  Arquivo de saída (.ffpfsc)")
+        self._tab_section(parent, "Arquivo de saída (.ffpfsc)")
         r2 = ctk.CTkFrame(parent, fg_color="transparent")
         r2.pack(fill="x", **pad)
         ctk.CTkEntry(r2, textvariable=self._t2_output_file,
                      placeholder_text="Nome e local do arquivo final .ffpfsc...",
                      width=490).pack(side="left", padx=(0, 8))
-        ctk.CTkButton(r2, text="💾  Salvar como", width=120,
+        ctk.CTkButton(r2, text="Selecionar", width=110,
                       command=self._t2_pick_output).pack(side="left")
 
-        self._tab_section(parent, "⚙️  Núcleos de CPU")
+        self._tab_section(parent, "Núcleos de CPU")
         cpu_row = ctk.CTkFrame(parent, fg_color="transparent")
         cpu_row.pack(fill="x", padx=16, pady=(4, 0))
         self._t2_cpu_label = ctk.CTkLabel(cpu_row, text=f"{self._saved_cpus} / {self._cpu_count}", width=60)
@@ -230,7 +230,7 @@ class App(ctk.CTk):
         self._t2_cpu_slider.set(self._saved_cpus)
         self._t2_cpu_slider.pack(side="left", fill="x", expand=True, padx=(0, 12))
 
-        self._t2_btn = ctk.CTkButton(parent, text="▶   Converter", height=40,
+        self._t2_btn = ctk.CTkButton(parent, text="Converter", height=40,
                                      font=ctk.CTkFont(size=14, weight="bold"),
                                      command=self._t2_start)
         self._t2_btn.pack(pady=(14, 0), padx=16, fill="x")
@@ -241,7 +241,7 @@ class App(ctk.CTk):
         self._t2_bar.set(0)
         self._t2_bar.pack(fill="x", padx=16)
 
-        ctk.CTkLabel(parent, text="📋  Log", anchor="w").pack(fill="x", padx=16, pady=(10, 2))
+        ctk.CTkLabel(parent, text="Log", anchor="w").pack(fill="x", padx=16, pady=(10, 2))
         self._t2_log = ctk.CTkTextbox(parent, height=200, font=ctk.CTkFont(family="Courier New", size=11), state="disabled")
         self._t2_log.pack(fill="both", expand=True, padx=16, pady=(0, 10))
 
@@ -263,25 +263,25 @@ class App(ctk.CTk):
             ctk.CTkButton(osf_row, text="Instalar OSFMount", width=150, height=26,
                           command=self._install_osfmount_manual).pack(side="right")
 
-        self._tab_section(parent, "📂  Dump de entrada")
+        self._tab_section(parent, "Dump de entrada")
         r1 = ctk.CTkFrame(parent, fg_color="transparent")
         r1.pack(fill="x", **pad)
         ctk.CTkEntry(r1, textvariable=self._t3_input_folder,
                      placeholder_text="Selecione o dump...",
                      width=490).pack(side="left", padx=(0, 8))
-        ctk.CTkButton(r1, text="📁  Selecionar", width=120,
+        ctk.CTkButton(r1, text="Selecionar", width=110,
                       command=self._t3_pick_folder).pack(side="left")
 
-        self._tab_section(parent, "💾  Arquivo de saída (.exfat)")
+        self._tab_section(parent, "Arquivo de saída (.exfat)")
         r2 = ctk.CTkFrame(parent, fg_color="transparent")
         r2.pack(fill="x", **pad)
         ctk.CTkEntry(r2, textvariable=self._t3_output_file,
                      placeholder_text="Nome e local do arquivo .exfat...",
                      width=490).pack(side="left", padx=(0, 8))
-        ctk.CTkButton(r2, text="💾  Salvar como", width=120,
+        ctk.CTkButton(r2, text="Selecionar", width=110,
                       command=self._t3_pick_output).pack(side="left")
 
-        self._t3_btn = ctk.CTkButton(parent, text="▶   Converter", height=40,
+        self._t3_btn = ctk.CTkButton(parent, text="Converter", height=40,
                                      font=ctk.CTkFont(size=14, weight="bold"),
                                      command=self._t3_start)
         self._t3_btn.pack(pady=(18, 0), padx=16, fill="x")
@@ -292,7 +292,7 @@ class App(ctk.CTk):
         self._t3_bar.set(0)
         self._t3_bar.pack(fill="x", padx=16)
 
-        ctk.CTkLabel(parent, text="📋  Log", anchor="w").pack(fill="x", padx=16, pady=(10, 2))
+        ctk.CTkLabel(parent, text="Log", anchor="w").pack(fill="x", padx=16, pady=(10, 2))
         self._t3_log = ctk.CTkTextbox(parent, height=200, font=ctk.CTkFont(family="Courier New", size=11), state="disabled")
         self._t3_log.pack(fill="both", expand=True, padx=16, pady=(0, 10))
 
@@ -311,34 +311,34 @@ class App(ctk.CTk):
                                            font=ctk.CTkFont(size=11))
         self._t4_osf_label.pack(side="left")
 
-        self._tab_section(parent, "📂  Dump de entrada")
+        self._tab_section(parent, "Dump de entrada")
         r1 = ctk.CTkFrame(parent, fg_color="transparent")
         r1.pack(fill="x", **pad)
         ctk.CTkEntry(r1, textvariable=self._t4_input_folder,
                      placeholder_text="Selecione o dump...",
                      width=490).pack(side="left", padx=(0, 8))
-        ctk.CTkButton(r1, text="📁  Selecionar", width=120,
+        ctk.CTkButton(r1, text="Selecionar", width=110,
                       command=self._t4_pick_folder).pack(side="left")
 
-        self._tab_section(parent, "⏳  Pasta para arquivos temporários")
+        self._tab_section(parent, "Pasta para arquivos temporários")
         r2 = ctk.CTkFrame(parent, fg_color="transparent")
         r2.pack(fill="x", **pad)
         ctk.CTkEntry(r2, textvariable=self._t4_temp_folder,
                      placeholder_text="Onde salvar o .exfat e .dat temporários...",
                      width=490).pack(side="left", padx=(0, 8))
-        ctk.CTkButton(r2, text="📁  Selecionar", width=120,
+        ctk.CTkButton(r2, text="Selecionar", width=110,
                       command=self._t4_pick_temp_folder).pack(side="left")
 
-        self._tab_section(parent, "💾  Arquivo de saída (.ffpfsc)")
+        self._tab_section(parent, "Arquivo de saída (.ffpfsc)")
         r3 = ctk.CTkFrame(parent, fg_color="transparent")
         r3.pack(fill="x", **pad)
         ctk.CTkEntry(r3, textvariable=self._t4_output_file,
                      placeholder_text="Nome e local do arquivo final .ffpfsc...",
                      width=490).pack(side="left", padx=(0, 8))
-        ctk.CTkButton(r3, text="💾  Salvar como", width=120,
+        ctk.CTkButton(r3, text="Selecionar", width=110,
                       command=self._t4_pick_output).pack(side="left")
 
-        self._tab_section(parent, "⚙️  Núcleos de CPU")
+        self._tab_section(parent, "Núcleos de CPU")
         cpu_row = ctk.CTkFrame(parent, fg_color="transparent")
         cpu_row.pack(fill="x", padx=16, pady=(4, 0))
         self._t4_cpu_label = ctk.CTkLabel(cpu_row, text=f"{self._saved_cpus} / {self._cpu_count}", width=60)
@@ -349,7 +349,7 @@ class App(ctk.CTk):
         self._t4_cpu_slider.set(self._saved_cpus)
         self._t4_cpu_slider.pack(side="left", fill="x", expand=True, padx=(0, 12))
 
-        self._t4_btn = ctk.CTkButton(parent, text="▶   Converter", height=40,
+        self._t4_btn = ctk.CTkButton(parent, text="Converter", height=40,
                                      font=ctk.CTkFont(size=14, weight="bold"),
                                      command=self._t4_start)
         self._t4_btn.pack(pady=(14, 0), padx=16, fill="x")
@@ -360,7 +360,7 @@ class App(ctk.CTk):
         self._t4_bar.set(0)
         self._t4_bar.pack(fill="x", padx=16)
 
-        ctk.CTkLabel(parent, text="📋  Log", anchor="w").pack(fill="x", padx=16, pady=(10, 2))
+        ctk.CTkLabel(parent, text="Log", anchor="w").pack(fill="x", padx=16, pady=(10, 2))
         self._t4_log = ctk.CTkTextbox(parent, height=200, font=ctk.CTkFont(family="Courier New", size=11), state="disabled")
         self._t4_log.pack(fill="both", expand=True, padx=16, pady=(0, 10))
 
