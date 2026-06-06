@@ -1,4 +1,4 @@
-# MkPFS Converter
+# PFS Converter
 
 Interface gráfica (GUI) para Windows que automatiza a conversão de arquivos para o formato PlayStation FileSystem (PFS) usando o [MkPFS](https://github.com/PSBrew/MkPFS).
 
@@ -26,7 +26,7 @@ Interface gráfica (GUI) para Windows que automatiza a conversão de arquivos pa
 - Output preenchido automaticamente com o nome da pasta ao selecionar a entrada
 - Slider para escolher quantidade de núcleos de CPU (detecta o total da máquina)
 - Log em tempo real do progresso da conversão
-- Preferências salvas em `%APPDATA%\MkPFS Converter\config.json`
+- Preferências salvas em `%APPDATA%\PFS Converter\config.json`
 - `--temp-folder` apontado para o mesmo drive do `pfs_image.dat` para evitar erro de hard link entre drives
 
 ---
@@ -62,7 +62,7 @@ mkpfs pack file --version PS5 --inode-bits 32 --cpu-count <N> --temp-folder <dir
 As preferências do usuário são armazenadas em:
 
 ```
-C:\Users\<usuario>\AppData\Roaming\MkPFS Converter\config.json
+C:\Users\<usuario>\AppData\Roaming\PFS Converter\config.json
 ```
 
 Campos salvos:
@@ -95,10 +95,10 @@ python gui.py
 
 ```
 pip install pyinstaller
-pyinstaller --onefile --windowed --noconsole --name "MkPFS Converter" gui.py
+pyinstaller --onefile --windowed --noconsole --name "PFS Converter" gui.py
 ```
 
-O executável será gerado em `dist\MkPFS Converter.exe`.
+O executável será gerado em `dist\PFS Converter.exe`.
 
 ---
 
