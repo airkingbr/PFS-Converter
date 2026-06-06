@@ -142,6 +142,9 @@ class App(ctk.CTk):
     def _build_tab1(self, parent):
         pad = {"padx": 16, "pady": (8, 0)}
 
+        ctk.CTkLabel(parent, text="Conversão de Dump (Folder) para Compressed PFS containers (FFPFSC) - Container .dat",
+                     anchor="w", font=ctk.CTkFont(size=11), text_color="gray").pack(fill="x", padx=16, pady=(8, 0))
+
         self._tab_section(parent, "Passo 1 — Dump de entrada")
         r1 = ctk.CTkFrame(parent, fg_color="transparent")
         r1.pack(fill="x", **pad)
@@ -201,6 +204,9 @@ class App(ctk.CTk):
     def _build_tab2(self, parent):
         pad = {"padx": 16, "pady": (8, 0)}
 
+        ctk.CTkLabel(parent, text="Conversão de exFAT para Compressed PFS containers (FFPFSC)",
+                     anchor="w", font=ctk.CTkFont(size=11), text_color="gray").pack(fill="x", padx=16, pady=(8, 0))
+
         self._tab_section(parent, "Arquivo de origem (.exfat)")
         r1 = ctk.CTkFrame(parent, fg_color="transparent")
         r1.pack(fill="x", **pad)
@@ -250,6 +256,9 @@ class App(ctk.CTk):
     # ──────────────────────────────────────────────────────────
     def _build_tab3(self, parent):
         pad = {"padx": 16, "pady": (8, 0)}
+
+        ctk.CTkLabel(parent, text="Conversão de Dump (Folder) para exFAT",
+                     anchor="w", font=ctk.CTkFont(size=11), text_color="gray").pack(fill="x", padx=16, pady=(8, 0))
 
         osf_row = ctk.CTkFrame(parent, fg_color="transparent")
         osf_row.pack(fill="x", padx=16, pady=(10, 0))
@@ -301,6 +310,9 @@ class App(ctk.CTk):
     # ──────────────────────────────────────────────────────────
     def _build_tab4(self, parent):
         pad = {"padx": 16, "pady": (8, 0)}
+
+        ctk.CTkLabel(parent, text="Conversão de Dump (Folder) para Compressed PFS containers (FFPFSC) - Container exFAT",
+                     anchor="w", font=ctk.CTkFont(size=11), text_color="gray").pack(fill="x", padx=16, pady=(8, 0))
 
         osf_row = ctk.CTkFrame(parent, fg_color="transparent")
         osf_row.pack(fill="x", padx=16, pady=(10, 0))
