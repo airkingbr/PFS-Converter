@@ -53,7 +53,7 @@ _RE_PS1_STEP = re.compile(r"\[(\d+)/(\d+)\]")
 ctk.set_appearance_mode("dark")
 ctk.set_default_color_theme("blue")
 
-VERSION = "1.0.2"
+VERSION = "1.0.3"
 
 CONFIG_PATH = os.path.join(os.environ.get("APPDATA", os.path.expanduser("~")), "PFS Converter", "config.json")
 
