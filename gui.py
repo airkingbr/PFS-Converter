@@ -53,7 +53,7 @@ _RE_PS1_STEP = re.compile(r"\[(\d+)/(\d+)\]")
 ctk.set_appearance_mode("dark")
 ctk.set_default_color_theme("blue")
 
-VERSION = "1.0.1"
+VERSION = "1.0.2"
 
 CONFIG_PATH = os.path.join(os.environ.get("APPDATA", os.path.expanduser("~")), "PFS Converter", "config.json")
 
@@ -573,8 +573,8 @@ class App(ctk.CTk):
         if os.path.exists(output): os.remove(output)
         cmd1 = [_MKPFS, "pack", "folder", "--no-compress", "--no-adjust-output-file-extension",
                 "--version", "PS5", "--inode-bits", "32", "--cpu-count", str(cpus), folder, temp]
-        # Staging deve ficar no mesmo drive do OUTPUT (NTFS), não do temp (pode ser exFAT/USB)
-        staging_dir = os.path.join(os.path.dirname(os.path.abspath(output)), "_mkpfs_staging")
+        # Staging sempre no %TEMP% do sistema (NTFS garantido), nunca no drive da fonte/saída
+        staging_dir = os.path.join(os.environ.get("TEMP", os.path.expanduser("~")), "_mkpfs_staging")
         os.makedirs(staging_dir, exist_ok=True)
         cmd2 = [_MKPFS, "pack", "file", "--version", "PS5", "--inode-bits", "32",
                 "--cpu-count", str(cpus), "--temp-folder", staging_dir, temp, output]
@@ -606,8 +606,8 @@ class App(ctk.CTk):
 
     def _t2_run(self, source, output, cpus):
         if os.path.exists(output): os.remove(output)
-        # Staging deve ficar no mesmo drive do OUTPUT (NTFS), não da fonte (pode ser exFAT/USB)
-        staging_dir = os.path.join(os.path.dirname(os.path.abspath(output)), "_mkpfs_staging")
+        # Staging sempre no %TEMP% do sistema (NTFS garantido), nunca no drive da fonte/saída
+        staging_dir = os.path.join(os.environ.get("TEMP", os.path.expanduser("~")), "_mkpfs_staging")
         os.makedirs(staging_dir, exist_ok=True)
         cmd = [_MKPFS, "pack", "file", "--version", "PS5", "--inode-bits", "32",
                "--cpu-count", str(cpus), "--temp-folder", staging_dir, source, output]
@@ -680,7 +680,8 @@ class App(ctk.CTk):
         if success:
             # Passo 2: exfat > ffpfsc
             if os.path.exists(output): os.remove(output)
-            staging_dir = os.path.join(tmp_dir, "_mkpfs_staging")
+            # Staging sempre no %TEMP% do sistema (NTFS garantido)
+            staging_dir = os.path.join(os.environ.get("TEMP", os.path.expanduser("~")), "_mkpfs_staging")
             os.makedirs(staging_dir, exist_ok=True)
             cmd_mkpfs = [_MKPFS, "pack", "file", "--version", "PS5", "--inode-bits", "32",
                          "--cpu-count", str(cpus), "--temp-folder", staging_dir, exfat_tmp, output]
