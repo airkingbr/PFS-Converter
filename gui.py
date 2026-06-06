@@ -16,6 +16,8 @@ if getattr(sys, "frozen", False):
 else:
     _BUNDLE_DIR = os.path.dirname(os.path.abspath(__file__))
 
+_ICON_PATH = os.path.join(_BUNDLE_DIR, "icon.ico")
+
 _PS1_PATH       = os.path.join(_BUNDLE_DIR, "New-OsfExfatImage.ps1")
 _OSFMOUNT_SETUP = os.path.join(_BUNDLE_DIR, "osfmount_setup.exe")
 
@@ -79,6 +81,8 @@ class App(ctk.CTk):
         self.title(f"PFS Converter v{VERSION}")
         self.geometry("720x740")
         self.resizable(False, False)
+        if os.path.isfile(_ICON_PATH):
+            self.iconbitmap(_ICON_PATH)
 
         self._cpu_count = multiprocessing.cpu_count()
         self._active_proc = None
