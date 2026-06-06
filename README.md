@@ -2,7 +2,6 @@
 
 Interface gráfica (GUI) para Windows que automatiza a conversão de arquivos para o formato PlayStation FileSystem (PFS) usando o [MkPFS](https://github.com/PSBrew/MkPFS).
 
-Agradecimentos ao Renan Barreto pelo MKPFS - https://github.com/PSBrew/MkPFS
 ---
 
 ## Versões
@@ -102,3 +101,4 @@ GUI-Conversor/
 ├── osfmount_setup.exe      # Instalador do OSFMount (embutido no .exe)
 └── README.md               # Este arquivo
 ```
+Agradecimentos ao Renan Barreto pelo MKPFS - https://github.com/PSBrew/MkPFS
