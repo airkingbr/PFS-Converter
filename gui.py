@@ -53,7 +53,7 @@ _RE_PS1_STEP = re.compile(r"\[(\d+)/(\d+)\]")
 ctk.set_appearance_mode("dark")
 ctk.set_default_color_theme("blue")
 
-VERSION = "1.0.3"
+VERSION = "1.0.4"
 
 CONFIG_PATH = os.path.join(os.environ.get("APPDATA", os.path.expanduser("~")), "PFS Converter", "config.json")
 
@@ -79,7 +79,7 @@ class App(ctk.CTk):
     def __init__(self):
         super().__init__()
         self.title(f"PFS Converter v{VERSION}")
-        self.geometry("720x740")
+        self.geometry("720x880")
         self.resizable(False, False)
         if os.path.isfile(_ICON_PATH):
             self.iconbitmap(_ICON_PATH)
