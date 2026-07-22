@@ -53,7 +53,7 @@ _RE_PS1_STEP = re.compile(r"\[(\d+)/(\d+)\]")
 ctk.set_appearance_mode("dark")
 ctk.set_default_color_theme("blue")
 
-VERSION = "1.0.6"
+VERSION = "1.0.7"
 
 CONFIG_PATH = os.path.join(os.environ.get("APPDATA", os.path.expanduser("~")), "PFS Converter", "config.json")
 
@@ -571,7 +571,7 @@ class App(ctk.CTk):
     def _t1_run(self, folder, temp, output, cpus):
         if os.path.exists(temp): os.remove(temp)
         if os.path.exists(output): os.remove(output)
-        cmd1 = [_MKPFS, "pack", "folder", "--no-compress", "--no-adjust-output-file-extension",
+        cmd1 = [_MKPFS, "pack", "folder", "--raw", "--no-compress", "--no-adjust-output-file-extension",
                 "--version", "PS5", "--inode-bits", "32", "--cpu-count", str(cpus), folder, temp]
         # Staging sempre no %TEMP% do sistema (NTFS garantido), nunca no drive da fonte/saída
         staging_dir = os.path.join(os.environ.get("TEMP", os.path.expanduser("~")), "_mkpfs_staging")
