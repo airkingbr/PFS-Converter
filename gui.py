@@ -482,11 +482,17 @@ class App(ctk.CTk):
             self._log_window.lift(); self._log_window.focus(); return
         win = ctk.CTkToplevel(self)
         win.title("Log de conversão")
-        win.geometry("780x460")
         win.resizable(True, True)
-        win.attributes("-topmost", True)
-        win.after(100, lambda: win.attributes("-topmost", False))
         self._log_window = win
+
+        # Position log window to the right of the main window
+        self.update_idletasks()
+        mx = self.winfo_x()
+        my = self.winfo_y()
+        mw = self.winfo_width()
+        mh = self.winfo_height()
+        log_w = 600
+        win.geometry(f"{log_w}x{mh}+{mx + mw}+{my}")
 
         bar = ctk.CTkFrame(win, fg_color="transparent")
         bar.pack(fill="x", padx=12, pady=(10, 4))
