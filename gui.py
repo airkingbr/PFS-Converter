@@ -7,27 +7,23 @@ import sys
 import json
 import time
 import shutil
+import struct
+import string
 import multiprocessing
 from tkinter import filedialog
+from PIL import Image
 
-# Localiza arquivos embutidos (dentro do .exe ou ao lado do .py)
+# ── Bundle paths ──────────────────────────────────────────
 if getattr(sys, "frozen", False):
     _BUNDLE_DIR = sys._MEIPASS
 else:
     _BUNDLE_DIR = os.path.dirname(os.path.abspath(__file__))
 
-_ICON_PATH = os.path.join(_BUNDLE_DIR, "icon.ico")
-
+_ICON_PATH      = os.path.join(_BUNDLE_DIR, "icon.ico")
 _PS1_PATH       = os.path.join(_BUNDLE_DIR, "New-OsfExfatImage.ps1")
 _OSFMOUNT_SETUP = os.path.join(_BUNDLE_DIR, "osfmount_setup.exe")
+_MKPFS          = os.path.join(_BUNDLE_DIR, "mkpfs_cli.exe") if getattr(sys, "frozen", False) else "mkpfs"
 
-# Quando frozen, usa o mkpfs_cli.exe embutido; caso contrário usa o mkpfs do PATH
-if getattr(sys, "frozen", False):
-    _MKPFS = os.path.join(_BUNDLE_DIR, "mkpfs_cli.exe")
-else:
-    _MKPFS = "mkpfs"
-
-# Caminhos padrão onde o OSFMount pode estar instalado
 _OSFMOUNT_CANDIDATES = [
     r"C:\Program Files\OSFMount\osfmount.com",
     r"C:\Program Files (x86)\OSFMount\osfmount.com",
@@ -37,80 +33,102 @@ _OSFMOUNT_CANDIDATES = [
 
 def _find_osfmount() -> str | None:
     for p in _OSFMOUNT_CANDIDATES:
-        if os.path.isfile(p):
-            return p
+        if os.path.isfile(p): return p
     for folder in os.environ.get("PATH", "").split(os.pathsep):
         candidate = os.path.join(folder, "osfmount.com")
-        if os.path.isfile(candidate):
-            return candidate
+        if os.path.isfile(candidate): return candidate
     return None
 
-# Regex progresso mkpfs: [###---]  45% scan
 _RE_PROGRESS = re.compile(r"\[[#\-]+\]\s+(\d+)%\s+(\w+)")
-# Regex etapas PS1: [1/4], [2/4] ...
 _RE_PS1_STEP = re.compile(r"\[(\d+)/(\d+)\]")
 
 ctk.set_appearance_mode("dark")
 ctk.set_default_color_theme("blue")
 
-VERSION = "1.1.1"
+VERSION = "1.2.0"
 
 CONFIG_PATH = os.path.join(os.environ.get("APPDATA", os.path.expanduser("~")), "PFS Converter", "config.json")
 
-
 def _load_config() -> dict:
     try:
-        with open(CONFIG_PATH, "r", encoding="utf-8") as f:
-            return json.load(f)
-    except (FileNotFoundError, json.JSONDecodeError):
-        return {}
-
+        with open(CONFIG_PATH, "r", encoding="utf-8") as f: return json.load(f)
+    except: return {}
 
 def _save_config(data: dict):
     try:
         os.makedirs(os.path.dirname(CONFIG_PATH), exist_ok=True)
-        with open(CONFIG_PATH, "w", encoding="utf-8") as f:
-            json.dump(data, f, indent=2, ensure_ascii=False)
-    except Exception:
-        pass
+        with open(CONFIG_PATH, "w", encoding="utf-8") as f: json.dump(data, f, indent=2, ensure_ascii=False)
+    except: pass
+
+# ── SFO / param.json parsers ──────────────────────────────
+def _parse_sfo(path: str) -> dict:
+    try:
+        with open(path, "rb") as f: data = f.read()
+        if data[:4] != b'\x00PSF': return {}
+        _, key_tbl, data_tbl, n = struct.unpack_from('<IIII', data, 4)
+        result = {}
+        for i in range(n):
+            off = 20 + i * 16
+            key_off, fmt, dlen, _, doff = struct.unpack_from('<HHIII', data, off)
+            key = data[key_tbl + key_off:].split(b'\x00')[0].decode('utf-8')
+            raw = data[data_tbl + doff: data_tbl + doff + dlen]
+            result[key] = struct.unpack_from('<I', raw)[0] if fmt == 0x0004 else raw.rstrip(b'\x00').decode('utf-8', errors='replace')
+        return result
+    except: return {}
+
+def _parse_param_json(path: str) -> dict:
+    try:
+        with open(path, "r", encoding="utf-8") as f: data = json.load(f)
+        title = "—"
+        loc = data.get("localizedParameters", {})
+        for lang in [loc.get("defaultLanguage", ""), "en-US", "pt-BR"] + list(loc.keys()):
+            entry = loc.get(lang, {})
+            if isinstance(entry, dict) and entry.get("titleName"):
+                title = entry["titleName"]; break
+        return {
+            "TITLE":    title,
+            "TITLE_ID": data.get("titleId", "—"),
+            "APP_VER":  str(data.get("contentVersion", data.get("masterVersion", "—"))),
+        }
+    except: return {}
+
+# ── Card style constants ───────────────────────────────────
+_CARD_SEL  = {"border_color": "#0d9488", "fg_color": "#081c1a", "border_width": 2}
+_CARD_NORM = {"border_color": "#2a2a3a", "fg_color": "#111120", "border_width": 1}
 
 
 class App(ctk.CTk):
     def __init__(self):
         super().__init__()
         self.title(f"PFS Converter v{VERSION}")
-        self.geometry("720x920")
-        self.resizable(False, False)
-        if os.path.isfile(_ICON_PATH):
-            self.iconbitmap(_ICON_PATH)
+        self.geometry("1280x860")
+        self.minsize(960, 680)
+        self.resizable(True, True)
+        if os.path.isfile(_ICON_PATH): self.iconbitmap(_ICON_PATH)
 
-        self._cpu_count = multiprocessing.cpu_count()
+        self._cpu_count  = multiprocessing.cpu_count()
         self._active_proc = None
         self.protocol("WM_DELETE_WINDOW", self._on_close)
 
         cfg = _load_config()
         self._saved_cpus = int(cfg.get("cpu_count", self._cpu_count))
-        self._cpu_auto = ctk.BooleanVar(value=False)
 
-        # Tab 1 — Dump > ffpfsc
-        self._t1_input_folder = ctk.StringVar()
-        self._t1_temp_file    = ctk.StringVar(value=cfg.get("temp_file", ""))
-        self._t1_output_file  = ctk.StringVar(value=cfg.get("t1_output_dir", ""))
+        # Build state
+        self._src_mode    = ctk.StringVar(value="folder")   # "folder" | "exfat"
+        self._fmt_var     = ctk.StringVar(value=cfg.get("fmt", "pfs_raw"))
+        self._comp_engine = ctk.StringVar(value=cfg.get("comp_engine", "zlib"))
+        self._comp_level  = ctk.StringVar(value=cfg.get("comp_level", "9"))
+        self._name_preset = ctk.StringVar(value=cfg.get("name_preset", "id_title_ver"))
+        self._cpu_auto    = ctk.BooleanVar(value=False)
+        self._src_folder  = ctk.StringVar()
+        self._src_exfat   = ctk.StringVar()
+        self._out_folder  = ctk.StringVar(value=cfg.get("out_folder", ""))
+        self._temp_folder = ctk.StringVar(value=cfg.get("temp_folder", ""))
+        self._output_name = ctk.StringVar()
+        self._game_info   = {}
+        self._adv_open    = False
 
-        # Tab 2 — exfat > ffpfsc
-        self._t2_source_file  = ctk.StringVar()
-        self._t2_output_file  = ctk.StringVar(value=cfg.get("t2_output_dir", ""))
-
-        # Tab 3 — Dump > exfat
-        self._t3_input_folder = ctk.StringVar()
-        self._t3_output_file  = ctk.StringVar(value=cfg.get("t3_output_dir", ""))
-
-        # Tab 4 — Dump > exfat > ffpfsc
-        self._t4_input_folder = ctk.StringVar()
-        self._t4_temp_folder  = ctk.StringVar(value=cfg.get("t4_temp_folder", ""))
-        self._t4_output_file  = ctk.StringVar(value=cfg.get("t4_output_dir", ""))
-
-        # Tab 5 — Extrair
+        # Extrair state
         self._t5_source_file   = ctk.StringVar()
         self._t5_output_folder = ctk.StringVar(value=cfg.get("t5_output_dir", ""))
         self._t5_deep          = ctk.BooleanVar(value=True)
@@ -118,516 +136,736 @@ class App(ctk.CTk):
 
         self._build_ui()
 
-        # Instala OSFMount silenciosamente se não estiver presente
         if not _find_osfmount():
             threading.Thread(target=self._auto_install_osfmount, daemon=True).start()
 
-    # ──────────────────────────────────────────────────────────
-    #  UI principal
-    # ──────────────────────────────────────────────────────────
+    # ────────────────────────────────────────────────────────
+    #  Top-level UI
+    # ────────────────────────────────────────────────────────
     def _build_ui(self):
-        ctk.CTkLabel(self, text="🎮  PFS Converter",
-                     font=ctk.CTkFont(size=20, weight="bold")).pack(pady=(20, 4))
-        ctk.CTkLabel(self, text=f"v{VERSION}",
-                     font=ctk.CTkFont(size=12), text_color="gray").pack(pady=(0, 10))
+        # Top bar
+        topbar = ctk.CTkFrame(self, fg_color="#0a0a14", height=48, corner_radius=0)
+        topbar.pack(fill="x")
+        topbar.pack_propagate(False)
+        ctk.CTkLabel(topbar, text="🎮  PFS Converter",
+                     font=ctk.CTkFont(size=16, weight="bold")).pack(side="left", padx=20)
+        ctk.CTkLabel(topbar, text=f"v{VERSION}",
+                     font=ctk.CTkFont(size=11), text_color="gray").pack(side="left")
 
-        self._tabs = ctk.CTkTabview(self)
-        self._tabs.pack(fill="both", expand=True, padx=16, pady=(0, 16))
-        self._tabs.add("Dump > ffpfsc")
-        self._tabs.add("exfat > ffpfsc")
-        self._tabs.add("Dump > exfat")
-        self._tabs.add("Dump > exfat > ffpfsc")
-        self._tabs.add("Extrair")
+        self._nav_build  = ctk.CTkButton(topbar, text="Converter", width=120, height=32,
+                                          fg_color="#0d9488", hover_color="#0a7b72",
+                                          command=lambda: self._show_view("build"))
+        self._nav_build.pack(side="left", padx=(24, 4))
+        self._nav_extra  = ctk.CTkButton(topbar, text="Extrair", width=100, height=32,
+                                          fg_color="#252535", hover_color="#353545",
+                                          command=lambda: self._show_view("extra"))
+        self._nav_extra.pack(side="left")
 
-        self._build_tab1(self._tabs.tab("Dump > ffpfsc"))
-        self._build_tab2(self._tabs.tab("exfat > ffpfsc"))
-        self._build_tab3(self._tabs.tab("Dump > exfat"))
-        self._build_tab4(self._tabs.tab("Dump > exfat > ffpfsc"))
-        self._build_tab5(self._tabs.tab("Extrair"))
+        # Build button — far right of topbar
+        self._build_btn = ctk.CTkButton(topbar, text="▶  Build", width=130, height=32,
+                                         fg_color="#0d9488", hover_color="#0a7b72",
+                                         font=ctk.CTkFont(size=13, weight="bold"),
+                                         command=self._build_start)
+        self._build_btn.pack(side="right", padx=16)
 
-    # ──────────────────────────────────────────────────────────
-    #  Tab 1 — Dump > ffpfsc
-    # ──────────────────────────────────────────────────────────
-    def _build_tab1(self, parent):
-        pad = {"padx": 16, "pady": (8, 0)}
+        # Views
+        self._view_build = ctk.CTkFrame(self, fg_color="transparent")
+        self._view_extra = ctk.CTkFrame(self, fg_color="transparent")
+        self._build_build_view(self._view_build)
+        self._build_extra_view(self._view_extra)
+        self._show_view("build")
 
-        ctk.CTkLabel(parent, text="Conversão de Dump (Folder) para Compressed PFS containers (FFPFSC) - Container .dat",
-                     anchor="w", font=ctk.CTkFont(size=11), text_color="gray").pack(fill="x", padx=16, pady=(8, 0))
+    def _show_view(self, v: str):
+        self._view_build.pack_forget()
+        self._view_extra.pack_forget()
+        if v == "build":
+            self._view_build.pack(fill="both", expand=True)
+            self._nav_build.configure(fg_color="#0d9488")
+            self._nav_extra.configure(fg_color="#252535")
+        else:
+            self._view_extra.pack(fill="both", expand=True)
+            self._nav_build.configure(fg_color="#252535")
+            self._nav_extra.configure(fg_color="#0d9488")
 
-        self._tab_section(parent, "Passo 1 — Dump de entrada")
-        r1 = ctk.CTkFrame(parent, fg_color="transparent")
-        r1.pack(fill="x", **pad)
-        ctk.CTkEntry(r1, textvariable=self._t1_input_folder,
-                     placeholder_text="Selecione o dump...",
-                     width=490).pack(side="left", padx=(0, 8))
-        ctk.CTkButton(r1, text="Selecionar", width=110,
-                      command=self._t1_pick_folder).pack(side="left")
+    # ────────────────────────────────────────────────────────
+    #  Build view  (sections 1-4, two columns)
+    # ────────────────────────────────────────────────────────
+    def _build_build_view(self, parent):
+        parent.columnconfigure(0, weight=1)
+        parent.columnconfigure(1, weight=1)
+        parent.rowconfigure(0, weight=1)   # top row (sec1 + sec2) expands
+        parent.rowconfigure(1, weight=0)   # bottom row (sec3) natural height
 
-        self._tab_section(parent, "Passo 2 — Arquivo temporário (pfs_image.dat)")
-        r2 = ctk.CTkFrame(parent, fg_color="transparent")
-        r2.pack(fill="x", **pad)
-        ctk.CTkEntry(r2, textvariable=self._t1_temp_file,
-                     placeholder_text="Onde salvar pfs_image.dat...",
-                     width=490).pack(side="left", padx=(0, 8))
-        ctk.CTkButton(r2, text="Selecionar", width=110,
-                      command=self._t1_pick_temp).pack(side="left")
+        # Top-left: sec1
+        left = ctk.CTkFrame(parent, fg_color="transparent")
+        left.grid(row=0, column=0, sticky="nsew", padx=(10, 5), pady=(10, 5))
 
-        self._tab_section(parent, "Passo 3 — Arquivo de saída (.ffpfsc)")
-        r3 = ctk.CTkFrame(parent, fg_color="transparent")
-        r3.pack(fill="x", **pad)
-        ctk.CTkEntry(r3, textvariable=self._t1_output_file,
-                     placeholder_text="Nome e local do arquivo final .ffpfsc...",
-                     width=490).pack(side="left", padx=(0, 8))
-        ctk.CTkButton(r3, text="Selecionar", width=110,
-                      command=self._t1_pick_output).pack(side="left")
+        # Top-right: format+output card
+        right = ctk.CTkFrame(parent, fg_color="transparent")
+        right.grid(row=0, column=1, sticky="nsew", padx=(5, 10), pady=(10, 5))
 
-        self._tab_section(parent, "Núcleos de CPU")
-        cpu_row = ctk.CTkFrame(parent, fg_color="transparent")
-        cpu_row.pack(fill="x", padx=16, pady=(4, 0))
-        self._t1_cpu_label = ctk.CTkLabel(cpu_row, text=f"{self._saved_cpus} / {self._cpu_count}", width=60)
-        self._t1_cpu_label.pack(side="right")
+        # Bottom-left: sec3 (output folders)
+        bot_left = ctk.CTkFrame(parent, fg_color="transparent")
+        bot_left.grid(row=1, column=0, sticky="nsew", padx=(10, 5), pady=(0, 10))
+
+        # Bottom-right: sec4 (advanced, always visible)
+        bot_right = ctk.CTkFrame(parent, fg_color="transparent")
+        bot_right.grid(row=1, column=1, sticky="nsew", padx=(5, 10), pady=(0, 10))
+
+        self._build_sec1(left)
+        self._build_right_card(right)
+        self._build_sec3(bot_left)
+        self._build_sec4(bot_right)
+        self._refresh_sec3()
+
+    # ── Section 1 — Source ─────────────────────────────────
+    def _build_sec1(self, parent):
+        card = self._card(parent)
+        card.pack(fill="both", expand=True)
+
+        self._sec_hdr(card, "1", "Source")
+
+        # Mode toggle
+        tog = ctk.CTkFrame(card, fg_color="transparent")
+        tog.pack(fill="x", padx=16, pady=(0, 10))
+        self._mode_btn_folder = ctk.CTkButton(tog, text="📁  Pasta do dump", width=160, height=28,
+                                               fg_color="#0d9488", hover_color="#0a7b72",
+                                               font=ctk.CTkFont(size=11),
+                                               command=lambda: self._set_src_mode("folder"))
+        self._mode_btn_folder.pack(side="left", padx=(0, 6))
+        self._mode_btn_exfat = ctk.CTkButton(tog, text="💿  Arquivo .exfat", width=160, height=28,
+                                              fg_color="#252535", hover_color="#353545",
+                                              font=ctk.CTkFont(size=11),
+                                              command=lambda: self._set_src_mode("exfat"))
+        self._mode_btn_exfat.pack(side="left")
+
+        # Art + text row (shown in folder mode)
+        self._info_row_wrap = ctk.CTkFrame(card, fg_color="transparent")
+        self._info_row_wrap.pack(fill="x", padx=16, pady=(0, 10))
+
+        self._info_icon_lbl = ctk.CTkLabel(self._info_row_wrap, text="", width=84, height=84,
+                                            corner_radius=8, fg_color="#1a1a2e")
+        self._info_icon_lbl.pack(side="left", padx=(0, 14))
+
+        txt = ctk.CTkFrame(self._info_row_wrap, fg_color="transparent")
+        txt.pack(side="left", fill="x", expand=True)
+
+        self._info_title_lbl = ctk.CTkLabel(txt, text="Selecione um dump",
+                                             font=ctk.CTkFont(size=14, weight="bold"),
+                                             anchor="w", justify="left")
+        self._info_title_lbl.pack(fill="x")
+        self._info_tid_lbl = ctk.CTkLabel(txt, text="",
+                                           font=ctk.CTkFont(size=12), text_color="gray", anchor="w")
+        self._info_tid_lbl.pack(fill="x", pady=(2, 8))
+
+        stats = ctk.CTkFrame(txt, fg_color="transparent")
+        stats.pack(fill="x")
+        self._stat_ver  = self._stat_box(stats, "VERSION",     "—")
+        self._stat_size = self._stat_box(stats, "DUMP SIZE",   "—")
+        self._stat_free = self._stat_box(stats, "OUTPUT FREE", "—")
+
+        # Status label
+        self._src_status = ctk.CTkLabel(card, text="Selecione o dump abaixo",
+                                         font=ctk.CTkFont(size=11), text_color="gray", anchor="w")
+        self._src_status.pack(fill="x", padx=16, pady=(0, 6))
+
+        # Folder picker
+        self._src_folder_row = ctk.CTkFrame(card, fg_color="transparent")
+        self._src_folder_row.pack(fill="x", padx=16, pady=(0, 14))
+        ctk.CTkEntry(self._src_folder_row, textvariable=self._src_folder,
+                     placeholder_text="Pasta do dump...",
+                     state="readonly").pack(side="left", fill="x", expand=True, padx=(0, 8))
+        ctk.CTkButton(self._src_folder_row, text="Browse", width=90,
+                      command=self._pick_src).pack(side="left")
+
+        # exFAT file picker (hidden initially)
+        self._src_exfat_row = ctk.CTkFrame(card, fg_color="transparent")
+        ctk.CTkEntry(self._src_exfat_row, textvariable=self._src_exfat,
+                     placeholder_text="Arquivo .exfat...",
+                     state="readonly").pack(side="left", fill="x", expand=True, padx=(0, 8))
+        ctk.CTkButton(self._src_exfat_row, text="Browse", width=90,
+                      command=self._pick_src_exfat).pack(side="left")
+
+    def _stat_box(self, parent, label, value):
+        f = ctk.CTkFrame(parent, fg_color="#191928", corner_radius=6)
+        f.pack(side="left", padx=(0, 6))
+        ctk.CTkLabel(f, text=label, font=ctk.CTkFont(size=9), text_color="#666688").pack(padx=10, pady=(5, 0))
+        lbl = ctk.CTkLabel(f, text=value, font=ctk.CTkFont(size=12, weight="bold"))
+        lbl.pack(padx=10, pady=(0, 5))
+        return lbl
+
+    # ── Right card — Format + Output name + Progress ──────
+    def _build_right_card(self, parent):
+        card = self._card(parent)
+        card.pack(fill="both", expand=True, pady=(0, 8))
+
+        # ── Format ──────────────────────────────────────────
+        self._sec_hdr(card, "2", "Format & Output")
+        self._sec2_subtitle = ctk.CTkLabel(card, text="Selecione o formato de saída",
+                     font=ctk.CTkFont(size=11), text_color="gray", anchor="w")
+        self._sec2_subtitle.pack(fill="x", padx=24, pady=(0, 10))
+
+        # Normal 3-card row (folder mode)
+        self._cards_normal_row = ctk.CTkFrame(card, fg_color="transparent")
+        self._cards_normal_row.pack(fill="x", padx=16, pady=(0, 12))
+        self._cards_normal_row.columnconfigure((0, 1, 2), weight=1, uniform="fc")
+
+        self._fmt_cards = {}
+        formats = [
+            ("exfat",     "💾", "exFAT",    "Imagem montável\npara a maioria",  True),
+            ("pfs_raw",   "📦", "PFS Raw",  ".dat → .ffpfsc\ncomprimido",       False),
+            ("pfs_exfat", "🗜️", "PFS exFAT","Via exFAT → .ffpfsc\ncomprimido", False),
+        ]
+        for col, (key, icon, name, desc, rec) in enumerate(formats):
+            sel = self._fmt_var.get() == key
+            fc = ctk.CTkFrame(self._cards_normal_row, corner_radius=8, **(_CARD_SEL if sel else _CARD_NORM))
+            fc.grid(row=0, column=col, padx=5, sticky="nsew")
+            top = ctk.CTkFrame(fc, fg_color="transparent")
+            top.pack(fill="x", padx=8, pady=(8, 0))
+            ctk.CTkLabel(top, text=icon, font=ctk.CTkFont(size=16)).pack(side="left")
+            chk = ctk.CTkLabel(top, text="✓" if sel else "",
+                               font=ctk.CTkFont(size=12), text_color="#0d9488")
+            chk.pack(side="right")
+            ctk.CTkLabel(fc, text=name, font=ctk.CTkFont(size=12, weight="bold"), anchor="w").pack(fill="x", padx=8, pady=(2, 0))
+            ctk.CTkLabel(fc, text=desc, font=ctk.CTkFont(size=9), text_color="gray",
+                         anchor="w", justify="left").pack(fill="x", padx=8, pady=(1, 0))
+            if rec:
+                ctk.CTkLabel(fc, text=" RECOMENDADO ", font=ctk.CTkFont(size=8, weight="bold"),
+                              fg_color="#0d9488", corner_radius=4, text_color="white"
+                              ).pack(anchor="w", padx=8, pady=(4, 0))
+            ctk.CTkFrame(fc, fg_color="transparent", height=8).pack()
+            self._bind_card_click(fc, key)
+            self._fmt_cards[key] = (fc, chk)
+
+        # Single PFS card (exfat file mode) — hidden initially
+        self._cards_exfat_row = ctk.CTkFrame(card, fg_color="transparent")
+        self._cards_exfat_row.columnconfigure(0, weight=1)
+        fc_pfs = ctk.CTkFrame(self._cards_exfat_row, corner_radius=8, **_CARD_SEL)
+        fc_pfs.grid(row=0, column=0, padx=5, sticky="new", pady=(0, 8))
+        top_pfs = ctk.CTkFrame(fc_pfs, fg_color="transparent")
+        top_pfs.pack(fill="x", padx=8, pady=(8, 0))
+        ctk.CTkLabel(top_pfs, text="🗜️", font=ctk.CTkFont(size=16)).pack(side="left")
+        ctk.CTkLabel(top_pfs, text="✓", font=ctk.CTkFont(size=12), text_color="#0d9488").pack(side="right")
+        ctk.CTkLabel(fc_pfs, text="PFS", font=ctk.CTkFont(size=12, weight="bold"), anchor="w").pack(fill="x", padx=8, pady=(2, 0))
+        ctk.CTkLabel(fc_pfs, text=".exfat → .ffpfsc comprimido", font=ctk.CTkFont(size=9),
+                     text_color="gray", anchor="w").pack(fill="x", padx=8, pady=(1, 8))
+
+        # ── Divider ─────────────────────────────────────────
+        ctk.CTkFrame(card, fg_color="#252535", height=1).pack(fill="x", padx=16, pady=(0, 12))
+
+        # ── Output name ─────────────────────────────────────
+        ctk.CTkLabel(card, text="OUTPUT NAME PRESET",
+                     font=ctk.CTkFont(size=10, weight="bold"), text_color="gray", anchor="w").pack(fill="x", padx=16, pady=(0, 6))
+        pf = ctk.CTkFrame(card, fg_color="transparent")
+        pf.pack(fill="x", padx=16, pady=(0, 8))
+        for val, lbl in [("id", "Title ID"), ("id_title", "+ Título"),
+                         ("id_title_ver", "+ Versão"), ("custom", "Personalizado")]:
+            ctk.CTkRadioButton(pf, text=lbl, variable=self._name_preset, value=val,
+                               radiobutton_width=14, radiobutton_height=14,
+                               command=self._update_out_name).pack(side="left", padx=(0, 12))
+
+        ctk.CTkLabel(card, text="Output name", font=ctk.CTkFont(size=11),
+                     text_color="gray", anchor="w").pack(fill="x", padx=16)
+        ctk.CTkEntry(card, textvariable=self._output_name,
+                     placeholder_text="nome_do_arquivo.ffpfsc").pack(fill="x", padx=16, pady=(4, 12))
+
+        # ── Divider ─────────────────────────────────────────
+        ctk.CTkFrame(card, fg_color="#252535", height=1).pack(fill="x", padx=16, pady=(0, 10))
+
+        # ── Progress ─────────────────────────────────────────
+        prow = ctk.CTkFrame(card, fg_color="transparent")
+        prow.pack(fill="x", padx=16, pady=(0, 6))
+        self._build_phase = ctk.CTkLabel(prow, text="Pronto", anchor="w", font=ctk.CTkFont(size=12))
+        self._build_phase.pack(side="left", fill="x", expand=True)
+        ctk.CTkButton(prow, text="📋 Log", width=76, height=26,
+                      fg_color="#252535", hover_color="#353545",
+                      font=ctk.CTkFont(size=11),
+                      command=self._open_log_window).pack(side="right")
+
+        self._build_bar = ctk.CTkProgressBar(card, height=12)
+        self._build_bar.set(0)
+        self._build_bar.pack(fill="x", padx=16, pady=(0, 16))
+
+        # Hidden log textbox (shown in popup)
+        self._build_log = ctk.CTkTextbox(self, font=ctk.CTkFont(family="Courier New", size=11),
+                                          state="disabled", width=1, height=1)
+        self._log_window = None
+        self._log_view   = None
+
+    # ── Section 3 — Configure output ───────────────────────
+    def _build_sec3(self, parent):
+        card = self._card(parent)
+        card.pack(fill="both", expand=True)
+
+        self._sec_hdr(card, "3", "Configure output")
+
+        ctk.CTkLabel(card, text="Output folder", font=ctk.CTkFont(weight="bold"), anchor="w").pack(fill="x", padx=16)
+        ctk.CTkLabel(card, text="onde a imagem será gravada",
+                     font=ctk.CTkFont(size=10), text_color="gray", anchor="w").pack(fill="x", padx=16)
+        r1 = ctk.CTkFrame(card, fg_color="transparent")
+        r1.pack(fill="x", padx=16, pady=(4, 12))
+        ctk.CTkEntry(r1, textvariable=self._out_folder,
+                     placeholder_text="Pasta de saída...").pack(side="left", fill="x", expand=True, padx=(0, 8))
+        ctk.CTkButton(r1, text="Browse", width=90, command=self._pick_out).pack(side="left")
+
+        self._temp_wrap = ctk.CTkFrame(card, fg_color="transparent")
+        ctk.CTkLabel(self._temp_wrap, text="Temp folder", font=ctk.CTkFont(weight="bold"), anchor="w").pack(fill="x")
+        ctk.CTkLabel(self._temp_wrap, text="redirect do build spool — PFS Raw e PFS exFAT",
+                     font=ctk.CTkFont(size=10), text_color="gray", anchor="w").pack(fill="x")
+        r2 = ctk.CTkFrame(self._temp_wrap, fg_color="transparent")
+        r2.pack(fill="x", pady=(4, 0))
+        ctk.CTkEntry(r2, textvariable=self._temp_folder,
+                     placeholder_text="Pasta temporária...").pack(side="left", fill="x", expand=True, padx=(0, 8))
+        ctk.CTkButton(r2, text="Browse", width=90, command=self._pick_temp).pack(side="left")
+
+    # ── Section 4 — Advanced options (always visible) ──────
+    def _build_sec4(self, parent):
+        card = self._card(parent)
+        card.pack(fill="both", expand=True)
+
+        self._sec_hdr(card, "4", "Advanced Options")
+
+        # CPU
+        ctk.CTkLabel(card, text="CPU threads", font=ctk.CTkFont(weight="bold"), anchor="w").pack(fill="x", padx=16)
+        ctk.CTkLabel(card, text="paralelo durante criação da imagem",
+                     font=ctk.CTkFont(size=10), text_color="gray", anchor="w").pack(fill="x", padx=16)
+        cpu_row = ctk.CTkFrame(card, fg_color="transparent")
+        cpu_row.pack(fill="x", padx=16, pady=(6, 12))
+        self._cpu_lbl = ctk.CTkLabel(cpu_row, text=str(self._saved_cpus), width=36)
+        self._cpu_lbl.pack(side="right")
         ctk.CTkCheckBox(cpu_row, text="Auto", variable=self._cpu_auto,
                         command=self._on_cpu_auto_toggle, width=70).pack(side="right", padx=(0, 8))
-        self._t1_cpu_slider = ctk.CTkSlider(cpu_row, from_=1, to=self._cpu_count,
-                                             number_of_steps=self._cpu_count - 1,
-                                             command=self._on_cpu_slider)
-        self._t1_cpu_slider.set(self._saved_cpus)
-        self._t1_cpu_slider.pack(side="left", fill="x", expand=True, padx=(0, 12))
+        self._cpu_slider = ctk.CTkSlider(cpu_row, from_=1, to=self._cpu_count,
+                                          number_of_steps=self._cpu_count - 1,
+                                          command=self._on_cpu_slider)
+        self._cpu_slider.set(self._saved_cpus)
+        self._cpu_slider.pack(side="left", fill="x", expand=True, padx=(0, 8))
 
-        self._t1_btn = ctk.CTkButton(parent, text="Converter", height=40,
-                                     font=ctk.CTkFont(size=14, weight="bold"),
-                                     command=self._t1_start)
-        self._t1_btn.pack(pady=(14, 0), padx=16, fill="x")
+        # Compression (shown conditionally)
+        self._comp_wrap = ctk.CTkFrame(card, fg_color="transparent")
 
-        self._t1_phase_label = ctk.CTkLabel(parent, text="", anchor="w", font=ctk.CTkFont(size=12))
-        self._t1_phase_label.pack(fill="x", padx=16, pady=(10, 2))
-        self._t1_bar = ctk.CTkProgressBar(parent, height=18)
-        self._t1_bar.set(0)
-        self._t1_bar.pack(fill="x", padx=16)
+        ctk.CTkLabel(self._comp_wrap, text="Compression engine",
+                     font=ctk.CTkFont(weight="bold"), anchor="w").pack(fill="x", padx=16)
+        for val, lbl in [("zlib", "zlib — safe (padrão)"), ("zlib-isa", "zlib-isa — experimental")]:
+            ctk.CTkRadioButton(self._comp_wrap, text=lbl, variable=self._comp_engine,
+                               value=val, radiobutton_width=16, radiobutton_height=16
+                               ).pack(anchor="w", padx=28, pady=2)
 
-        ctk.CTkLabel(parent, text="Log", anchor="w").pack(fill="x", padx=16, pady=(10, 2))
-        self._t1_log = ctk.CTkTextbox(parent, height=200, font=ctk.CTkFont(family="Courier New", size=11), state="disabled")
-        self._t1_log.pack(fill="both", expand=True, padx=16, pady=(0, 10))
+        ctk.CTkLabel(self._comp_wrap, text="Compression level",
+                     font=ctk.CTkFont(weight="bold"), anchor="w").pack(fill="x", padx=16, pady=(10, 4))
+        _lvl_map = {"1": "1 — Mínima", "3": "3 — Média", "6": "6 — Alta", "9": "9 — Máxima"}
+        self._comp_menu = ctk.CTkOptionMenu(
+            self._comp_wrap,
+            values=list(_lvl_map.values()),
+            command=lambda v: self._comp_level.set(v[0])
+        )
+        self._comp_menu.set(_lvl_map.get(self._comp_level.get(), "9 — Máxima"))
+        self._comp_menu.pack(fill="x", padx=16, pady=(0, 12))
 
-    # ──────────────────────────────────────────────────────────
-    #  Tab 2 — exfat > ffpfsc
-    # ──────────────────────────────────────────────────────────
-    def _build_tab2(self, parent):
-        pad = {"padx": 16, "pady": (8, 0)}
+    def _refresh_sec3(self):
+        fmt = self._fmt_var.get()
+        mode = self._src_mode.get()
+        needs_temp = (mode == "folder") and (fmt in ("pfs_raw", "pfs_exfat"))
+        needs_comp = (mode == "exfat") or (fmt in ("pfs_raw", "pfs_exfat"))
+        if needs_temp:
+            self._temp_wrap.pack(fill="x", padx=16, pady=(0, 12))
+        else:
+            self._temp_wrap.pack_forget()
+        if needs_comp:
+            self._comp_wrap.pack(fill="x")
+        else:
+            self._comp_wrap.pack_forget()
 
-        ctk.CTkLabel(parent, text="Conversão de exFAT para Compressed PFS containers (FFPFSC)",
-                     anchor="w", font=ctk.CTkFont(size=11), text_color="gray").pack(fill="x", padx=16, pady=(8, 0))
 
-        self._tab_section(parent, "Arquivo de origem (.exfat)")
-        r1 = ctk.CTkFrame(parent, fg_color="transparent")
-        r1.pack(fill="x", **pad)
-        ctk.CTkEntry(r1, textvariable=self._t2_source_file,
-                     placeholder_text="Selecione o arquivo .exfat...",
-                     width=490).pack(side="left", padx=(0, 8))
-        ctk.CTkButton(r1, text="Selecionar", width=110,
-                      command=self._t2_pick_source).pack(side="left")
+    def _open_log_window(self):
+        if self._log_window and self._log_window.winfo_exists():
+            self._log_window.lift(); self._log_window.focus(); return
+        win = ctk.CTkToplevel(self)
+        win.title("Log de conversão")
+        win.geometry("780x460")
+        win.resizable(True, True)
+        win.attributes("-topmost", True)
+        win.after(100, lambda: win.attributes("-topmost", False))
+        self._log_window = win
 
-        self._tab_section(parent, "Arquivo de saída (.ffpfsc)")
-        r2 = ctk.CTkFrame(parent, fg_color="transparent")
-        r2.pack(fill="x", **pad)
-        ctk.CTkEntry(r2, textvariable=self._t2_output_file,
-                     placeholder_text="Nome e local do arquivo final .ffpfsc...",
-                     width=490).pack(side="left", padx=(0, 8))
-        ctk.CTkButton(r2, text="Selecionar", width=110,
-                      command=self._t2_pick_output).pack(side="left")
+        bar = ctk.CTkFrame(win, fg_color="transparent")
+        bar.pack(fill="x", padx=12, pady=(10, 4))
+        ctk.CTkLabel(bar, text="Log de conversão", font=ctk.CTkFont(size=13, weight="bold")).pack(side="left")
+        ctk.CTkButton(bar, text="Limpar", width=70, height=26,
+                      fg_color="#252535", hover_color="#353545",
+                      command=self._clear_both_logs).pack(side="right")
 
-        self._tab_section(parent, "Núcleos de CPU")
-        cpu_row = ctk.CTkFrame(parent, fg_color="transparent")
-        cpu_row.pack(fill="x", padx=16, pady=(4, 0))
-        self._t2_cpu_label = ctk.CTkLabel(cpu_row, text=f"{self._saved_cpus} / {self._cpu_count}", width=60)
-        self._t2_cpu_label.pack(side="right")
-        ctk.CTkCheckBox(cpu_row, text="Auto", variable=self._cpu_auto,
-                        command=self._on_cpu_auto_toggle, width=70).pack(side="right", padx=(0, 8))
-        self._t2_cpu_slider = ctk.CTkSlider(cpu_row, from_=1, to=self._cpu_count,
-                                             number_of_steps=self._cpu_count - 1,
-                                             command=self._on_cpu_slider)
-        self._t2_cpu_slider.set(self._saved_cpus)
-        self._t2_cpu_slider.pack(side="left", fill="x", expand=True, padx=(0, 12))
+        self._log_view = ctk.CTkTextbox(win, font=ctk.CTkFont(family="Courier New", size=11),
+                                         state="normal")
+        self._log_view.pack(fill="both", expand=True, padx=12, pady=(0, 12))
 
-        self._t2_btn = ctk.CTkButton(parent, text="Converter", height=40,
-                                     font=ctk.CTkFont(size=14, weight="bold"),
-                                     command=self._t2_start)
-        self._t2_btn.pack(pady=(14, 0), padx=16, fill="x")
+        # Copy current log content into the view
+        content = self._build_log.get("1.0", "end")
+        self._log_view.insert("1.0", content)
+        self._log_view.see("end")
+        self._log_view.configure(state="disabled")
 
-        self._t2_phase_label = ctk.CTkLabel(parent, text="", anchor="w", font=ctk.CTkFont(size=12))
-        self._t2_phase_label.pack(fill="x", padx=16, pady=(10, 2))
-        self._t2_bar = ctk.CTkProgressBar(parent, height=18)
-        self._t2_bar.set(0)
-        self._t2_bar.pack(fill="x", padx=16)
+        def _on_close():
+            self._log_view = None
+            self._log_window = None
+            win.destroy()
+        win.protocol("WM_DELETE_WINDOW", _on_close)
 
-        ctk.CTkLabel(parent, text="Log", anchor="w").pack(fill="x", padx=16, pady=(10, 2))
-        self._t2_log = ctk.CTkTextbox(parent, height=200, font=ctk.CTkFont(family="Courier New", size=11), state="disabled")
-        self._t2_log.pack(fill="both", expand=True, padx=16, pady=(0, 10))
+    def _clear_both_logs(self):
+        self._log_clear(self._build_log)
+        if self._log_view and self._log_window and self._log_window.winfo_exists():
+            self._log_view.configure(state="normal")
+            self._log_view.delete("1.0", "end")
+            self._log_view.configure(state="disabled")
 
-    # ──────────────────────────────────────────────────────────
-    #  Tab 3 — Dump > exfat
-    # ──────────────────────────────────────────────────────────
-    def _build_tab3(self, parent):
-        pad = {"padx": 16, "pady": (8, 0)}
+    # ── Extrair view ───────────────────────────────────────
+    def _build_extra_view(self, parent):
+        card = self._card(parent)
+        card.pack(fill="both", expand=True, padx=10, pady=10)
+        self._sec_hdr(card, "↓", "Extrair arquivos de imagem PFS")
+        ctk.CTkLabel(card, text="Extração a partir de .ffpfsc, .ffpfs ou .exfat",
+                     font=ctk.CTkFont(size=11), text_color="gray", anchor="w").pack(fill="x", padx=24, pady=(0, 12))
 
-        ctk.CTkLabel(parent, text="Conversão de Dump (Folder) para exFAT",
-                     anchor="w", font=ctk.CTkFont(size=11), text_color="gray").pack(fill="x", padx=16, pady=(8, 0))
-
-        osf_row = ctk.CTkFrame(parent, fg_color="transparent")
-        osf_row.pack(fill="x", padx=16, pady=(10, 0))
-        osf = _find_osfmount()
-        self._t3_osf_label = ctk.CTkLabel(osf_row,
-                                           text="✓ OSFMount instalado" if osf else "✗ OSFMount não encontrado",
-                                           anchor="w", text_color="#a3e635" if osf else "#f87171",
-                                           font=ctk.CTkFont(size=11))
-        self._t3_osf_label.pack(side="left")
-        if not osf:
-            ctk.CTkButton(osf_row, text="Instalar OSFMount", width=150, height=26,
-                          command=self._install_osfmount_manual).pack(side="right")
-
-        self._tab_section(parent, "Dump de entrada")
-        r1 = ctk.CTkFrame(parent, fg_color="transparent")
-        r1.pack(fill="x", **pad)
-        ctk.CTkEntry(r1, textvariable=self._t3_input_folder,
-                     placeholder_text="Selecione o dump...",
-                     width=490).pack(side="left", padx=(0, 8))
-        ctk.CTkButton(r1, text="Selecionar", width=110,
-                      command=self._t3_pick_folder).pack(side="left")
-
-        self._tab_section(parent, "Arquivo de saída (.exfat)")
-        r2 = ctk.CTkFrame(parent, fg_color="transparent")
-        r2.pack(fill="x", **pad)
-        ctk.CTkEntry(r2, textvariable=self._t3_output_file,
-                     placeholder_text="Nome e local do arquivo .exfat...",
-                     width=490).pack(side="left", padx=(0, 8))
-        ctk.CTkButton(r2, text="Selecionar", width=110,
-                      command=self._t3_pick_output).pack(side="left")
-
-        self._t3_btn = ctk.CTkButton(parent, text="Converter", height=40,
-                                     font=ctk.CTkFont(size=14, weight="bold"),
-                                     command=self._t3_start)
-        self._t3_btn.pack(pady=(18, 0), padx=16, fill="x")
-
-        self._t3_phase_label = ctk.CTkLabel(parent, text="", anchor="w", font=ctk.CTkFont(size=12))
-        self._t3_phase_label.pack(fill="x", padx=16, pady=(10, 2))
-        self._t3_bar = ctk.CTkProgressBar(parent, height=18)
-        self._t3_bar.set(0)
-        self._t3_bar.pack(fill="x", padx=16)
-
-        ctk.CTkLabel(parent, text="Log", anchor="w").pack(fill="x", padx=16, pady=(10, 2))
-        self._t3_log = ctk.CTkTextbox(parent, height=200, font=ctk.CTkFont(family="Courier New", size=11), state="disabled")
-        self._t3_log.pack(fill="both", expand=True, padx=16, pady=(0, 10))
-
-    # ──────────────────────────────────────────────────────────
-    #  Tab 4 — Dump > exfat > ffpfsc
-    # ──────────────────────────────────────────────────────────
-    def _build_tab4(self, parent):
-        pad = {"padx": 16, "pady": (8, 0)}
-
-        ctk.CTkLabel(parent, text="Conversão de Dump (Folder) para Compressed PFS containers (FFPFSC) - Container exFAT",
-                     anchor="w", font=ctk.CTkFont(size=11), text_color="gray").pack(fill="x", padx=16, pady=(8, 0))
-
-        osf_row = ctk.CTkFrame(parent, fg_color="transparent")
-        osf_row.pack(fill="x", padx=16, pady=(10, 0))
-        osf = _find_osfmount()
-        self._t4_osf_label = ctk.CTkLabel(osf_row,
-                                           text="✓ OSFMount instalado" if osf else "✗ OSFMount não encontrado",
-                                           anchor="w", text_color="#a3e635" if osf else "#f87171",
-                                           font=ctk.CTkFont(size=11))
-        self._t4_osf_label.pack(side="left")
-
-        self._tab_section(parent, "Dump de entrada")
-        r1 = ctk.CTkFrame(parent, fg_color="transparent")
-        r1.pack(fill="x", **pad)
-        ctk.CTkEntry(r1, textvariable=self._t4_input_folder,
-                     placeholder_text="Selecione o dump...",
-                     width=490).pack(side="left", padx=(0, 8))
-        ctk.CTkButton(r1, text="Selecionar", width=110,
-                      command=self._t4_pick_folder).pack(side="left")
-
-        self._tab_section(parent, "Pasta para arquivos temporários")
-        r2 = ctk.CTkFrame(parent, fg_color="transparent")
-        r2.pack(fill="x", **pad)
-        ctk.CTkEntry(r2, textvariable=self._t4_temp_folder,
-                     placeholder_text="Onde salvar o .exfat e .dat temporários...",
-                     width=490).pack(side="left", padx=(0, 8))
-        ctk.CTkButton(r2, text="Selecionar", width=110,
-                      command=self._t4_pick_temp_folder).pack(side="left")
-
-        self._tab_section(parent, "Arquivo de saída (.ffpfsc)")
-        r3 = ctk.CTkFrame(parent, fg_color="transparent")
-        r3.pack(fill="x", **pad)
-        ctk.CTkEntry(r3, textvariable=self._t4_output_file,
-                     placeholder_text="Nome e local do arquivo final .ffpfsc...",
-                     width=490).pack(side="left", padx=(0, 8))
-        ctk.CTkButton(r3, text="Selecionar", width=110,
-                      command=self._t4_pick_output).pack(side="left")
-
-        self._tab_section(parent, "Núcleos de CPU")
-        cpu_row = ctk.CTkFrame(parent, fg_color="transparent")
-        cpu_row.pack(fill="x", padx=16, pady=(4, 0))
-        self._t4_cpu_label = ctk.CTkLabel(cpu_row, text=f"{self._saved_cpus} / {self._cpu_count}", width=60)
-        self._t4_cpu_label.pack(side="right")
-        ctk.CTkCheckBox(cpu_row, text="Auto", variable=self._cpu_auto,
-                        command=self._on_cpu_auto_toggle, width=70).pack(side="right", padx=(0, 8))
-        self._t4_cpu_slider = ctk.CTkSlider(cpu_row, from_=1, to=self._cpu_count,
-                                             number_of_steps=self._cpu_count - 1,
-                                             command=self._on_cpu_slider)
-        self._t4_cpu_slider.set(self._saved_cpus)
-        self._t4_cpu_slider.pack(side="left", fill="x", expand=True, padx=(0, 12))
-
-        self._t4_btn = ctk.CTkButton(parent, text="Converter", height=40,
-                                     font=ctk.CTkFont(size=14, weight="bold"),
-                                     command=self._t4_start)
-        self._t4_btn.pack(pady=(14, 0), padx=16, fill="x")
-
-        self._t4_phase_label = ctk.CTkLabel(parent, text="", anchor="w", font=ctk.CTkFont(size=12))
-        self._t4_phase_label.pack(fill="x", padx=16, pady=(10, 2))
-        self._t4_bar = ctk.CTkProgressBar(parent, height=18)
-        self._t4_bar.set(0)
-        self._t4_bar.pack(fill="x", padx=16)
-
-        ctk.CTkLabel(parent, text="Log", anchor="w").pack(fill="x", padx=16, pady=(10, 2))
-        self._t4_log = ctk.CTkTextbox(parent, height=200, font=ctk.CTkFont(family="Courier New", size=11), state="disabled")
-        self._t4_log.pack(fill="both", expand=True, padx=16, pady=(0, 10))
-
-    # ──────────────────────────────────────────────────────────
-    #  Tab 5 — Extrair
-    # ──────────────────────────────────────────────────────────
-    def _build_tab5(self, parent):
-        pad = {"padx": 16, "pady": (8, 0)}
-
-        ctk.CTkLabel(parent, text="Extração de arquivos a partir de imagem PFS (.ffpfsc, .ffpfs, .exfat)",
-                     anchor="w", font=ctk.CTkFont(size=11), text_color="gray").pack(fill="x", padx=16, pady=(8, 0))
-
-        self._tab_section(parent, "Arquivo de origem (.ffpfsc / .ffpfs / .exfat)")
-        r1 = ctk.CTkFrame(parent, fg_color="transparent")
-        r1.pack(fill="x", **pad)
+        ctk.CTkLabel(card, text="Arquivo de origem", font=ctk.CTkFont(weight="bold"), anchor="w").pack(fill="x", padx=16)
+        r1 = ctk.CTkFrame(card, fg_color="transparent")
+        r1.pack(fill="x", padx=16, pady=(4, 10))
         ctk.CTkEntry(r1, textvariable=self._t5_source_file,
-                     placeholder_text="Selecione o arquivo de imagem...",
-                     width=490).pack(side="left", padx=(0, 8))
-        ctk.CTkButton(r1, text="Selecionar", width=110,
-                      command=self._t5_pick_source).pack(side="left")
+                     placeholder_text="Arquivo de imagem...").pack(side="left", fill="x", expand=True, padx=(0, 8))
+        ctk.CTkButton(r1, text="Browse", width=90, command=self._t5_pick_src).pack(side="left")
 
-        self._tab_section(parent, "Pasta de saída")
-        r2 = ctk.CTkFrame(parent, fg_color="transparent")
-        r2.pack(fill="x", **pad)
+        ctk.CTkLabel(card, text="Pasta de saída", font=ctk.CTkFont(weight="bold"), anchor="w").pack(fill="x", padx=16)
+        r2 = ctk.CTkFrame(card, fg_color="transparent")
+        r2.pack(fill="x", padx=16, pady=(4, 10))
         ctk.CTkEntry(r2, textvariable=self._t5_output_folder,
-                     placeholder_text="Onde extrair os arquivos...",
-                     width=490).pack(side="left", padx=(0, 8))
-        ctk.CTkButton(r2, text="Selecionar", width=110,
-                      command=self._t5_pick_output).pack(side="left")
+                     placeholder_text="Onde extrair...").pack(side="left", fill="x", expand=True, padx=(0, 8))
+        ctk.CTkButton(r2, text="Browse", width=90, command=self._t5_pick_out).pack(side="left")
 
-        self._tab_section(parent, "Opções")
-        opt_row = ctk.CTkFrame(parent, fg_color="transparent")
-        opt_row.pack(fill="x", padx=16, pady=(6, 0))
-        ctk.CTkCheckBox(opt_row, text="Extrair arquivos internos (--deep)",
-                        variable=self._t5_deep).pack(side="left", padx=(0, 24))
-        ctk.CTkCheckBox(opt_row, text="Sobrescrever existentes (--overwrite)",
-                        variable=self._t5_overwrite).pack(side="left")
+        opt = ctk.CTkFrame(card, fg_color="transparent")
+        opt.pack(fill="x", padx=16, pady=(0, 10))
+        ctk.CTkCheckBox(opt, text="Extrair arquivos internos (--deep)", variable=self._t5_deep).pack(side="left", padx=(0, 24))
+        ctk.CTkCheckBox(opt, text="Sobrescrever existentes (--overwrite)", variable=self._t5_overwrite).pack(side="left")
 
-        self._t5_btn = ctk.CTkButton(parent, text="Extrair", height=40,
-                                     font=ctk.CTkFont(size=14, weight="bold"),
-                                     command=self._t5_start)
-        self._t5_btn.pack(pady=(14, 0), padx=16, fill="x")
+        self._t5_btn = ctk.CTkButton(card, text="Extrair", height=44,
+                                      fg_color="#0d9488", hover_color="#0a7b72",
+                                      font=ctk.CTkFont(size=14, weight="bold"), command=self._t5_start)
+        self._t5_btn.pack(fill="x", padx=16, pady=(4, 10))
 
-        self._t5_phase_label = ctk.CTkLabel(parent, text="", anchor="w", font=ctk.CTkFont(size=12))
-        self._t5_phase_label.pack(fill="x", padx=16, pady=(10, 2))
-        self._t5_bar = ctk.CTkProgressBar(parent, height=18, mode="indeterminate")
-        self._t5_bar.pack(fill="x", padx=16)
+        self._t5_phase = ctk.CTkLabel(card, text="", anchor="w", font=ctk.CTkFont(size=12))
+        self._t5_phase.pack(fill="x", padx=16, pady=(4, 2))
+        self._t5_bar = ctk.CTkProgressBar(card, height=14, mode="indeterminate")
+        self._t5_bar.pack(fill="x", padx=16, pady=(0, 8))
 
-        ctk.CTkLabel(parent, text="Log", anchor="w").pack(fill="x", padx=16, pady=(10, 2))
-        self._t5_log = ctk.CTkTextbox(parent, height=200, font=ctk.CTkFont(family="Courier New", size=11), state="disabled")
-        self._t5_log.pack(fill="both", expand=True, padx=16, pady=(0, 10))
+        ctk.CTkLabel(card, text="Log", anchor="w", text_color="gray",
+                     font=ctk.CTkFont(size=11)).pack(fill="x", padx=16)
+        self._t5_log = ctk.CTkTextbox(card, font=ctk.CTkFont(family="Courier New", size=11), state="disabled")
+        self._t5_log.pack(fill="both", expand=True, padx=16, pady=(4, 16))
 
-    def _tab_section(self, parent, title):
-        ctk.CTkLabel(parent, text=title, anchor="w",
-                     font=ctk.CTkFont(weight="bold")).pack(fill="x", padx=16, pady=(12, 2))
+    # ────────────────────────────────────────────────────────
+    #  UI helpers
+    # ────────────────────────────────────────────────────────
+    def _bind_card_click(self, widget, key: str):
+        """Recursively bind left-click on every child of a format card."""
+        widget.bind("<Button-1>", lambda e, k=key: self._select_fmt(k))
+        for child in widget.winfo_children():
+            self._bind_card_click(child, key)
 
-    # ──────────────────────────────────────────────────────────
-    #  CPU slider (sincronizado entre tabs)
-    # ──────────────────────────────────────────────────────────
+    def _card(self, parent):
+        return ctk.CTkFrame(parent, corner_radius=10, fg_color="#111120",
+                            border_width=1, border_color="#252535")
+
+    def _sec_hdr(self, parent, n, title):
+        f = ctk.CTkFrame(parent, fg_color="transparent")
+        f.pack(fill="x", padx=16, pady=(14, 10))
+        ctk.CTkLabel(f, text=str(n), width=24, height=24, corner_radius=12,
+                     fg_color="#1d3557", font=ctk.CTkFont(size=11, weight="bold")).pack(side="left", padx=(0, 8))
+        ctk.CTkLabel(f, text=title, font=ctk.CTkFont(size=14, weight="bold"), anchor="w").pack(side="left")
+
+    # ────────────────────────────────────────────────────────
+    #  Format selection
+    # ────────────────────────────────────────────────────────
+    def _select_fmt(self, key: str):
+        self._fmt_var.set(key)
+        for k, (fc, chk) in self._fmt_cards.items():
+            sel = k == key
+            fc.configure(**(_CARD_SEL if sel else _CARD_NORM))
+            chk.configure(text="✓" if sel else "")
+        self._refresh_sec3()
+        self._update_out_name()
+        _save_config({**_load_config(), "fmt": key})
+
+    # ────────────────────────────────────────────────────────
+    #  Source mode toggle
+    # ────────────────────────────────────────────────────────
+    def _set_src_mode(self, mode: str):
+        self._src_mode.set(mode)
+        if mode == "folder":
+            self._mode_btn_folder.configure(fg_color="#0d9488")
+            self._mode_btn_exfat.configure(fg_color="#252535")
+            self._src_exfat_row.pack_forget()
+            self._src_folder_row.pack(fill="x", padx=16, pady=(0, 14))
+            self._cards_normal_row.pack(fill="x", padx=16, pady=(0, 16))
+            self._cards_exfat_row.pack_forget()
+            self._sec2_subtitle.configure(text="Selecione o formato e configure as opções abaixo")
+        else:
+            self._mode_btn_exfat.configure(fg_color="#0d9488")
+            self._mode_btn_folder.configure(fg_color="#252535")
+            self._src_folder_row.pack_forget()
+            self._src_exfat_row.pack(fill="x", padx=16, pady=(0, 14))
+            self._cards_normal_row.pack_forget()
+            self._cards_exfat_row.pack(fill="x", padx=16)
+            self._sec2_subtitle.configure(text="Formato fixo: .exfat → .ffpfsc comprimido")
+            self._info_title_lbl.configure(text="Selecione um arquivo .exfat")
+            self._info_tid_lbl.configure(text="")
+            self._stat_ver.configure(text="—")
+            self._stat_size.configure(text="—")
+            self._info_icon_lbl.configure(image=None, text="")
+            self._src_status.configure(text="Selecione o arquivo .exfat abaixo", text_color="gray")
+        self._refresh_sec3()
+        self._update_out_name()
+
+    # ────────────────────────────────────────────────────────
+    #  Pickers
+    # ────────────────────────────────────────────────────────
+    def _pick_src(self):
+        path = filedialog.askdirectory(title="Selecione o dump")
+        if path:
+            self._src_folder.set(path)
+            self._update_out_name()
+            self._update_free_space()
+            threading.Thread(target=self._load_info, args=(path,), daemon=True).start()
+
+    def _pick_src_exfat(self):
+        path = filedialog.askopenfilename(
+            title="Selecione o arquivo .exfat",
+            filetypes=[("Imagem exFAT", "*.exfat"), ("All files", "*.*")],
+        )
+        if path:
+            self._src_exfat.set(path)
+            self._game_info = {}
+            self._update_out_name()
+            self._src_status.configure(text="Lendo metadados...", text_color="gray")
+            threading.Thread(target=self._load_info_from_exfat, args=(path,), daemon=True).start()
+
+    def _load_info_from_exfat(self, exfat_path: str):
+        osf = _find_osfmount()
+        if not osf:
+            self.after(0, lambda: self._src_status.configure(
+                text="OSFMount não encontrado — sem prévia", text_color="#f87171"))
+            return
+        drive = self._find_free_drive()
+        if not drive:
+            self.after(0, lambda: self._src_status.configure(
+                text="Nenhuma letra de drive disponível", text_color="#f87171"))
+            return
+        try:
+            r = subprocess.run(
+                [osf, "-a", "-t", "file", "-f", exfat_path, "-o", "ro,rem", "-m", drive],
+                capture_output=True, text=True, encoding="utf-8", errors="replace",
+                creationflags=subprocess.CREATE_NO_WINDOW, timeout=15)
+            if r.returncode != 0:
+                err = (r.stdout + r.stderr).strip().splitlines()
+                msg = err[-1] if err else f"código {r.returncode}"
+                self.after(0, lambda m=msg: self._src_status.configure(
+                    text=f"Falha ao montar: {m}", text_color="#f87171"))
+                return
+            mount_root = drive + "\\"
+            self._load_info(mount_root)
+        except Exception as e:
+            self.after(0, lambda: self._src_status.configure(
+                text=f"Erro: {e}", text_color="#f87171"))
+        finally:
+            try:
+                subprocess.run([osf, "-d", "-m", drive],
+                               capture_output=True,
+                               creationflags=subprocess.CREATE_NO_WINDOW, timeout=10)
+            except: pass
+
+    def _pick_out(self):
+        path = filedialog.askdirectory(title="Pasta de saída")
+        if path:
+            self._out_folder.set(path)
+            self._update_free_space()
+            _save_config({**_load_config(), "out_folder": path})
+
+    def _pick_temp(self):
+        path = filedialog.askdirectory(title="Pasta temporária")
+        if path:
+            self._temp_folder.set(path)
+            _save_config({**_load_config(), "temp_folder": path})
+
+    def _update_free_space(self):
+        out = self._out_folder.get()
+        if out and os.path.isdir(out):
+            try:
+                free = shutil.disk_usage(out).free
+                txt = f"{free/(1<<30):.1f} GB" if free >= 1<<30 else f"{free/(1<<20):.0f} MB"
+                self._stat_free.configure(text=txt)
+            except: pass
+
+    # ────────────────────────────────────────────────────────
+    #  Output name generation
+    # ────────────────────────────────────────────────────────
+    def _update_out_name(self, *_):
+        if self._name_preset.get() == "custom": return
+        info  = self._game_info
+        tid   = re.sub(r'[\\/:*?"<>|]', '', info.get("title_id", "")).strip()
+        title = re.sub(r'[\\/:*?"<>|]', '', info.get("titulo",   "")).strip()
+        ver   = re.sub(r'[\\/:*?"<>|]', '', info.get("versao",   "")).strip()
+        ext   = ".exfat" if (self._src_mode.get() == "folder" and self._fmt_var.get() == "exfat") else ".ffpfsc"
+        base  = tid or "output"
+        p = self._name_preset.get()
+        sep = f"{base} - " if title else base
+        if p == "id":           name = f"{base}{ext}"
+        elif p == "id_title":   name = f"{sep}{title}{ext}" if title else f"{base}{ext}"
+        else:                   name = f"{sep}{title} ({ver}){ext}" if title and ver else (f"{sep}{title}{ext}" if title else f"{base}{ext}")
+        self._output_name.set(name)
+
+    # ────────────────────────────────────────────────────────
+    #  CPU slider
+    # ────────────────────────────────────────────────────────
     def _on_cpu_slider(self, value):
         cpus = int(value)
-        for lbl in (self._t1_cpu_label, self._t2_cpu_label, self._t4_cpu_label):
-            lbl.configure(text=f"{cpus} / {self._cpu_count}")
-        for sl in (self._t1_cpu_slider, self._t2_cpu_slider, self._t4_cpu_slider):
-            sl.set(cpus)
+        self._cpu_lbl.configure(text=str(cpus))
         _save_config({**_load_config(), "cpu_count": cpus})
 
     def _on_cpu_auto_toggle(self):
         auto = self._cpu_auto.get()
-        state = "disabled" if auto else "normal"
-        for sl in (self._t1_cpu_slider, self._t2_cpu_slider, self._t4_cpu_slider):
-            sl.configure(state=state)
-        label = "Auto (0)" if auto else f"{int(self._t1_cpu_slider.get())} / {self._cpu_count}"
-        for lbl in (self._t1_cpu_label, self._t2_cpu_label, self._t4_cpu_label):
-            lbl.configure(text=label)
+        self._cpu_slider.configure(state="disabled" if auto else "normal")
+        self._cpu_lbl.configure(text="Auto" if auto else str(int(self._cpu_slider.get())))
 
     def _get_cpus(self):
-        return 0 if self._cpu_auto.get() else int(self._t1_cpu_slider.get())
+        return 0 if self._cpu_auto.get() else int(self._cpu_slider.get())
 
-    # ──────────────────────────────────────────────────────────
-    #  OSFMount — instalação
-    # ──────────────────────────────────────────────────────────
-    def _auto_install_osfmount(self):
-        if not os.path.isfile(_OSFMOUNT_SETUP):
-            return
-        for lbl in (self._t3_osf_label, self._t4_osf_label):
-            self.after(0, lambda l=lbl: l.configure(text="⏳ Instalando OSFMount...", text_color="white"))
+    # ────────────────────────────────────────────────────────
+    #  Build
+    # ────────────────────────────────────────────────────────
+    def _build_start(self):
+        mode     = self._src_mode.get()
+        out_dir  = self._out_folder.get().strip()
+        out_name = self._output_name.get().strip()
+        fmt      = self._fmt_var.get()
+        cpus     = self._get_cpus()
+        comp_lvl = self._comp_level.get().split()[0]
+        comp_eng = self._comp_engine.get()
+        temp_dir = self._temp_folder.get().strip() or os.environ.get("TEMP", os.path.expanduser("~"))
+
+        if not out_dir:
+            self._log_append(self._build_log, "[ERRO] Informe a pasta de saída.\n", clear=True); return
+        if not out_name:
+            self._log_append(self._build_log, "[ERRO] Informe o nome do arquivo de saída.\n", clear=True); return
+
+        self._build_btn.configure(state="disabled", text="Convertendo...")
+        self._build_bar.set(0)
+        self._build_phase.configure(text="")
+        self._log_clear(self._build_log)
+        self._build_start_time = time.time()
+        output = os.path.join(out_dir, out_name)
+
+        if mode == "exfat":
+            src_exfat = self._src_exfat.get().strip()
+            if not src_exfat or not os.path.isfile(src_exfat):
+                self._log_append(self._build_log, "[ERRO] Selecione um arquivo .exfat válido.\n", clear=True)
+                self._build_btn.configure(state="normal", text="▶  Build"); return
+            threading.Thread(target=self._do_build_from_exfat,
+                             args=(src_exfat, output, cpus, comp_eng, comp_lvl),
+                             daemon=True).start()
+        else:
+            folder = self._src_folder.get().strip()
+            if not folder or not os.path.isdir(folder):
+                self._log_append(self._build_log, "[ERRO] Selecione um dump válido.\n", clear=True)
+                self._build_btn.configure(state="normal", text="▶  Build"); return
+            if fmt == "pfs_exfat" and not _find_osfmount():
+                self._log_append(self._build_log, "[ERRO] OSFMount não encontrado (necessário para PFS exFAT).\n", clear=True)
+                self._build_btn.configure(state="normal", text="▶  Build"); return
+            threading.Thread(target=self._do_build,
+                             args=(folder, output, temp_dir, cpus, fmt, comp_eng, comp_lvl),
+                             daemon=True).start()
+
+    def _do_build(self, folder, output, temp_dir, cpus, fmt, comp_eng, comp_lvl):
+        name = os.path.basename(folder.rstrip("/\\"))
+        staging = os.path.join(os.environ.get("TEMP", os.path.expanduser("~")), "_mkpfs_staging")
+        os.makedirs(staging, exist_ok=True)
+
+        def pack_file_cmd(src, dst):
+            cmd = [_MKPFS, "pack", "file", "--version", "PS5", "--inode-bits", "32",
+                   "--cpu-count", str(cpus), "--temp-folder", staging]
+            if comp_eng == "zlib-isa":
+                cmd += ["--compression-backend", "zlib-isa"]
+            if comp_lvl.isdigit():
+                cmd += ["--compression-level", comp_lvl]
+            cmd += [src, dst]
+            return cmd
+
+        success = False
         try:
-            proc = subprocess.Popen(
-                [_OSFMOUNT_SETUP, "/VERYSILENT", "/SUPPRESSMSGBOXES", "/NORESTART"],
-                creationflags=subprocess.CREATE_NO_WINDOW,
-            )
-            proc.wait()
-            if _find_osfmount():
-                for lbl in (self._t3_osf_label, self._t4_osf_label):
-                    self.after(0, lambda l=lbl: l.configure(text="✓ OSFMount instalado com sucesso!", text_color="#a3e635"))
-            else:
-                for lbl in (self._t3_osf_label, self._t4_osf_label):
-                    self.after(0, lambda l=lbl: l.configure(text="✗ Instalação falhou. Tente manualmente.", text_color="#f87171"))
-        except Exception as e:
-            for lbl in (self._t3_osf_label, self._t4_osf_label):
-                self.after(0, lambda l=lbl: l.configure(text=f"✗ Erro: {e}", text_color="#f87171"))
+            if fmt == "exfat":
+                if os.path.exists(output): os.remove(output)
+                cmd = ["powershell.exe", "-NoProfile", "-ExecutionPolicy", "Bypass",
+                       "-File", _PS1_PATH, "-ImagePath", output, "-SourceDir", folder, "-ForceOverwrite"]
+                success = self._run_cmd_ps1(cmd, self._build_bar, self._build_phase, self._build_log)
 
-    def _install_osfmount_manual(self):
-        if not os.path.isfile(_OSFMOUNT_SETUP):
-            self._t3_osf_label.configure(text="✗ Instalador não encontrado.", text_color="#f87171")
-            return
-        self._t3_osf_label.configure(text="⏳ Instalando OSFMount...", text_color="white")
-        threading.Thread(target=self._auto_install_osfmount, daemon=True).start()
+            elif fmt == "pfs_raw":
+                dat = os.path.join(temp_dir, "pfs_image.dat")
+                if os.path.exists(dat): os.remove(dat)
+                if os.path.exists(output): os.remove(output)
+                cmd1 = [_MKPFS, "pack", "folder", "--raw", "--no-compress",
+                        "--no-adjust-output-file-extension", "--version", "PS5",
+                        "--inode-bits", "32", "--cpu-count", str(cpus), folder, dat]
+                success = self._run_cmd(cmd1, self._build_bar, self._build_phase,
+                                         self._build_log, "Passo 1/2", success_file=dat)
+                if success:
+                    success = self._run_cmd(pack_file_cmd(dat, output),
+                                             self._build_bar, self._build_phase,
+                                             self._build_log, "Passo 2/2", success_file=output)
+                if os.path.exists(dat):
+                    try: os.remove(dat)
+                    except: pass
 
-    # ──────────────────────────────────────────────────────────
-    #  Tab 1 — pickers
-    # ──────────────────────────────────────────────────────────
-    def _t1_pick_folder(self):
-        path = filedialog.askdirectory(title="Selecione o dump")
-        if path:
-            self._t1_input_folder.set(path)
-            name = os.path.basename(path.rstrip("/\\"))
-            if not self._t1_temp_file.get():
-                self._t1_temp_file.set(os.path.join(path, "pfs_image.dat"))
-            out_dir = os.path.dirname(self._t1_output_file.get()) if self._t1_output_file.get() else os.path.dirname(path)
-            self._t1_output_file.set(os.path.join(out_dir, f"{name}.ffpfsc"))
+            elif fmt == "pfs_exfat":
+                os.makedirs(temp_dir, exist_ok=True)
+                exfat = os.path.join(temp_dir, f"{name}.exfat")
+                self.after(0, lambda: self._build_phase.configure(
+                    text="Passo 1/2 — Criando imagem exFAT...", text_color="white"))
+                cmd_ps1 = ["powershell.exe", "-NoProfile", "-ExecutionPolicy", "Bypass",
+                           "-File", _PS1_PATH, "-ImagePath", exfat,
+                           "-SourceDir", folder, "-ForceOverwrite"]
+                success = self._run_cmd_ps1(cmd_ps1, self._build_bar, self._build_phase,
+                                             self._build_log, step_offset=0, total_steps=2)
+                if success:
+                    if os.path.exists(output): os.remove(output)
+                    success = self._run_cmd(pack_file_cmd(exfat, output),
+                                             self._build_bar, self._build_phase,
+                                             self._build_log, "Passo 2/2", success_file=output)
+                if os.path.exists(exfat):
+                    try: os.remove(exfat)
+                    except: pass
+        finally:
+            shutil.rmtree(staging, ignore_errors=True)
 
-    def _t1_pick_temp(self):
-        current = self._t1_temp_file.get()
-        path = filedialog.asksaveasfilename(
-            title="Local do arquivo temporário",
-            defaultextension=".dat",
-            filetypes=[("DAT file", "*.dat"), ("All files", "*.*")],
-            initialfile="pfs_image.dat",
-            initialdir=os.path.dirname(current) if current else None,
-        )
-        if path:
-            self._t1_temp_file.set(path)
-            _save_config({**_load_config(), "temp_file": path})
+        self._finish(self._build_phase, self._build_btn, self._build_start_time, success, "▶  Build")
 
-    def _t1_pick_output(self):
-        current = self._t1_output_file.get()
-        path = filedialog.asksaveasfilename(
-            title="Salvar arquivo final como",
-            defaultextension=".ffpfsc",
-            filetypes=[("FFPFSC file", "*.ffpfsc")],
-            initialdir=os.path.dirname(current) if current else None,
-        )
-        if path:
-            if not path.endswith(".ffpfsc"):
-                path = os.path.splitext(path)[0] + ".ffpfsc"
-            self._t1_output_file.set(path)
-            _save_config({**_load_config(), "t1_output_dir": os.path.dirname(path)})
+    def _do_build_from_exfat(self, src_exfat, output, cpus, comp_eng, comp_lvl):
+        staging = os.path.join(os.environ.get("TEMP", os.path.expanduser("~")), "_mkpfs_staging")
+        os.makedirs(staging, exist_ok=True)
+        try:
+            if os.path.exists(output): os.remove(output)
+            cmd = [_MKPFS, "pack", "file", "--version", "PS5", "--inode-bits", "32",
+                   "--cpu-count", str(cpus), "--temp-folder", staging]
+            if comp_eng == "zlib-isa":
+                cmd += ["--compression-backend", "zlib-isa"]
+            if comp_lvl.isdigit():
+                cmd += ["--compression-level", comp_lvl]
+            cmd += [src_exfat, output]
+            success = self._run_cmd(cmd, self._build_bar, self._build_phase,
+                                     self._build_log, "", success_file=output)
+        finally:
+            shutil.rmtree(staging, ignore_errors=True)
+        self._finish(self._build_phase, self._build_btn, self._build_start_time, success, "▶  Build")
 
-    # ──────────────────────────────────────────────────────────
-    #  Tab 2 — pickers
-    # ──────────────────────────────────────────────────────────
-    def _t2_pick_source(self):
-        current = self._t2_source_file.get()
-        path = filedialog.askopenfilename(
-            title="Selecione o arquivo .exfat",
-            filetypes=[("exFAT file", "*.exfat"), ("All files", "*.*")],
-            initialdir=os.path.dirname(current) if current else None,
-        )
-        if path:
-            self._t2_source_file.set(path)
-            base = os.path.splitext(os.path.basename(path))[0]
-            out_dir = os.path.dirname(self._t2_output_file.get()) if self._t2_output_file.get() else os.path.dirname(path)
-            self._t2_output_file.set(os.path.join(out_dir, f"{base}.ffpfsc"))
-
-    def _t2_pick_output(self):
-        current = self._t2_output_file.get()
-        path = filedialog.asksaveasfilename(
-            title="Salvar arquivo final como",
-            defaultextension=".ffpfsc",
-            filetypes=[("FFPFSC file", "*.ffpfsc")],
-            initialdir=os.path.dirname(current) if current else None,
-        )
-        if path:
-            if not path.endswith(".ffpfsc"):
-                path = os.path.splitext(path)[0] + ".ffpfsc"
-            self._t2_output_file.set(path)
-            _save_config({**_load_config(), "t2_output_dir": os.path.dirname(path)})
-
-    # ──────────────────────────────────────────────────────────
-    #  Tab 3 — pickers
-    # ──────────────────────────────────────────────────────────
-    def _t3_pick_folder(self):
-        path = filedialog.askdirectory(title="Selecione o dump")
-        if path:
-            self._t3_input_folder.set(path)
-            name = os.path.basename(path.rstrip("/\\"))
-            out_dir = os.path.dirname(self._t3_output_file.get()) if self._t3_output_file.get() else os.path.dirname(path)
-            self._t3_output_file.set(os.path.join(out_dir, f"{name}.exfat"))
-
-    def _t3_pick_output(self):
-        current = self._t3_output_file.get()
-        path = filedialog.asksaveasfilename(
-            title="Salvar arquivo .exfat como",
-            defaultextension=".exfat",
-            filetypes=[("exFAT image", "*.exfat"), ("All files", "*.*")],
-            initialdir=os.path.dirname(current) if current else None,
-        )
-        if path:
-            if not path.endswith(".exfat"):
-                path = os.path.splitext(path)[0] + ".exfat"
-            self._t3_output_file.set(path)
-            _save_config({**_load_config(), "t3_output_dir": os.path.dirname(path)})
-
-    # ──────────────────────────────────────────────────────────
-    #  Tab 4 — pickers
-    # ──────────────────────────────────────────────────────────
-    def _t4_pick_folder(self):
-        path = filedialog.askdirectory(title="Selecione o dump")
-        if path:
-            self._t4_input_folder.set(path)
-            name = os.path.basename(path.rstrip("/\\"))
-            out_dir = os.path.dirname(self._t4_output_file.get()) if self._t4_output_file.get() else os.path.dirname(path)
-            self._t4_output_file.set(os.path.join(out_dir, f"{name}.ffpfsc"))
-
-    def _t4_pick_temp_folder(self):
-        path = filedialog.askdirectory(title="Selecione a pasta para arquivos temporários")
-        if path:
-            self._t4_temp_folder.set(path)
-            _save_config({**_load_config(), "t4_temp_folder": path})
-
-    def _t4_pick_output(self):
-        current = self._t4_output_file.get()
-        path = filedialog.asksaveasfilename(
-            title="Salvar arquivo final como",
-            defaultextension=".ffpfsc",
-            filetypes=[("FFPFSC file", "*.ffpfsc")],
-            initialdir=os.path.dirname(current) if current else None,
-        )
-        if path:
-            if not path.endswith(".ffpfsc"):
-                path = os.path.splitext(path)[0] + ".ffpfsc"
-            self._t4_output_file.set(path)
-            _save_config({**_load_config(), "t4_output_dir": os.path.dirname(path)})
-
-    # ──────────────────────────────────────────────────────────
-    #  Tab 5 — pickers
-    # ──────────────────────────────────────────────────────────
-    def _t5_pick_source(self):
+    # ────────────────────────────────────────────────────────
+    #  Extrair
+    # ────────────────────────────────────────────────────────
+    def _t5_pick_src(self):
         current = self._t5_source_file.get()
         path = filedialog.askopenfilename(
             title="Selecione o arquivo de imagem",
@@ -641,167 +879,13 @@ class App(ctk.CTk):
             self._t5_output_folder.set(os.path.join(out_dir, base))
             _save_config({**_load_config(), "t5_output_dir": os.path.dirname(path)})
 
-    def _t5_pick_output(self):
+    def _t5_pick_out(self):
         current = self._t5_output_folder.get()
-        path = filedialog.askdirectory(
-            title="Selecione a pasta de saída",
-            initialdir=current if current else None,
-        )
+        path = filedialog.askdirectory(title="Pasta de saída", initialdir=current if current else None)
         if path:
             self._t5_output_folder.set(path)
             _save_config({**_load_config(), "t5_output_dir": path})
 
-    # ──────────────────────────────────────────────────────────
-    #  Tab 1 — conversão
-    # ──────────────────────────────────────────────────────────
-    def _t1_start(self):
-        folder = self._t1_input_folder.get().strip()
-        temp   = self._t1_temp_file.get().strip()
-        output = self._t1_output_file.get().strip()
-        if not folder or not os.path.isdir(folder):
-            self._log_append(self._t1_log, "[ERRO] Selecione um dump válido.\n", clear=True); return
-        if not temp:
-            self._log_append(self._t1_log, "[ERRO] Informe o caminho do arquivo temporário.\n", clear=True); return
-        if not output:
-            self._log_append(self._t1_log, "[ERRO] Informe o caminho do arquivo de saída.\n", clear=True); return
-        cpus = self._get_cpus()
-        self._t1_btn.configure(state="disabled", text="Convertendo...")
-        self._t1_bar.set(0); self._t1_phase_label.configure(text="")
-        self._log_clear(self._t1_log)
-        self._t1_start_time = time.time()
-        threading.Thread(target=self._t1_run, args=(folder, temp, output, cpus), daemon=True).start()
-
-    def _t1_run(self, folder, temp, output, cpus):
-        if os.path.exists(temp): os.remove(temp)
-        if os.path.exists(output): os.remove(output)
-        cmd1 = [_MKPFS, "pack", "folder", "--raw", "--no-compress", "--no-adjust-output-file-extension",
-                "--version", "PS5", "--inode-bits", "32", "--cpu-count", str(cpus), folder, temp]
-        # Staging sempre no %TEMP% do sistema (NTFS garantido), nunca no drive da fonte/saída
-        staging_dir = os.path.join(os.environ.get("TEMP", os.path.expanduser("~")), "_mkpfs_staging")
-        os.makedirs(staging_dir, exist_ok=True)
-        cmd2 = [_MKPFS, "pack", "file", "--version", "PS5", "--inode-bits", "32",
-                "--cpu-count", str(cpus), "--temp-folder", staging_dir, temp, output]
-        success = self._run_cmd(cmd1, self._t1_bar, self._t1_phase_label, self._t1_log, "Passo 1/2")
-        if success:
-            success = self._run_cmd(cmd2, self._t1_bar, self._t1_phase_label, self._t1_log, "Passo 2/2")
-        if os.path.exists(temp):
-            try: os.remove(temp)
-            except: pass
-        shutil.rmtree(staging_dir, ignore_errors=True)
-        self._finish(self._t1_phase_label, self._t1_btn, self._t1_start_time, success)
-
-    # ──────────────────────────────────────────────────────────
-    #  Tab 2 — conversão
-    # ──────────────────────────────────────────────────────────
-    def _t2_start(self):
-        source = self._t2_source_file.get().strip()
-        output = self._t2_output_file.get().strip()
-        if not source or not os.path.isfile(source):
-            self._log_append(self._t2_log, "[ERRO] Selecione um arquivo .exfat válido.\n", clear=True); return
-        if not output:
-            self._log_append(self._t2_log, "[ERRO] Informe o caminho do arquivo de saída.\n", clear=True); return
-        cpus = self._get_cpus()
-        self._t2_btn.configure(state="disabled", text="Convertendo...")
-        self._t2_bar.set(0); self._t2_phase_label.configure(text="")
-        self._log_clear(self._t2_log)
-        self._t2_start_time = time.time()
-        threading.Thread(target=self._t2_run, args=(source, output, cpus), daemon=True).start()
-
-    def _t2_run(self, source, output, cpus):
-        if os.path.exists(output): os.remove(output)
-        # Staging sempre no %TEMP% do sistema (NTFS garantido), nunca no drive da fonte/saída
-        staging_dir = os.path.join(os.environ.get("TEMP", os.path.expanduser("~")), "_mkpfs_staging")
-        os.makedirs(staging_dir, exist_ok=True)
-        cmd = [_MKPFS, "pack", "file", "--version", "PS5", "--inode-bits", "32",
-               "--cpu-count", str(cpus), "--temp-folder", staging_dir, source, output]
-        success = self._run_cmd(cmd, self._t2_bar, self._t2_phase_label, self._t2_log, "")
-        shutil.rmtree(staging_dir, ignore_errors=True)
-        self._finish(self._t2_phase_label, self._t2_btn, self._t2_start_time, success)
-
-    # ──────────────────────────────────────────────────────────
-    #  Tab 3 — conversão
-    # ──────────────────────────────────────────────────────────
-    def _t3_start(self):
-        folder = self._t3_input_folder.get().strip()
-        output = self._t3_output_file.get().strip()
-        if not folder or not os.path.isdir(folder):
-            self._log_append(self._t3_log, "[ERRO] Selecione um dump válido.\n", clear=True); return
-        if not output:
-            self._log_append(self._t3_log, "[ERRO] Informe o caminho do arquivo de saída.\n", clear=True); return
-        if not _find_osfmount():
-            self._log_append(self._t3_log, "[ERRO] OSFMount não encontrado.\n", clear=True); return
-        self._t3_btn.configure(state="disabled", text="Convertendo...")
-        self._t3_bar.set(0); self._t3_phase_label.configure(text="")
-        self._log_clear(self._t3_log)
-        self._t3_start_time = time.time()
-        threading.Thread(target=self._t3_run, args=(folder, output), daemon=True).start()
-
-    def _t3_run(self, folder, output):
-        cmd = ["powershell.exe", "-NoProfile", "-ExecutionPolicy", "Bypass",
-               "-File", _PS1_PATH, "-ImagePath", output, "-SourceDir", folder, "-ForceOverwrite"]
-        success = self._run_cmd_ps1(cmd, self._t3_bar, self._t3_phase_label, self._t3_log)
-        self._finish(self._t3_phase_label, self._t3_btn, self._t3_start_time, success)
-
-    # ──────────────────────────────────────────────────────────
-    #  Tab 4 — conversão Dump > exfat > ffpfsc
-    # ──────────────────────────────────────────────────────────
-    def _t4_start(self):
-        folder  = self._t4_input_folder.get().strip()
-        tmp_dir = self._t4_temp_folder.get().strip()
-        output  = self._t4_output_file.get().strip()
-        if not folder or not os.path.isdir(folder):
-            self._log_append(self._t4_log, "[ERRO] Selecione um dump válido.\n", clear=True); return
-        if not tmp_dir:
-            self._log_append(self._t4_log, "[ERRO] Informe a pasta para arquivos temporários.\n", clear=True); return
-        if not output:
-            self._log_append(self._t4_log, "[ERRO] Informe o caminho do arquivo de saída.\n", clear=True); return
-        if not _find_osfmount():
-            self._log_append(self._t4_log, "[ERRO] OSFMount não encontrado.\n", clear=True); return
-        cpus = self._get_cpus()
-        self._t4_btn.configure(state="disabled", text="Convertendo...")
-        self._t4_bar.set(0); self._t4_phase_label.configure(text="")
-        self._log_clear(self._t4_log)
-        self._t4_start_time = time.time()
-        threading.Thread(target=self._t4_run, args=(folder, tmp_dir, output, cpus), daemon=True).start()
-
-    def _t4_run(self, folder, tmp_dir, output, cpus):
-        name = os.path.basename(folder.rstrip("/\\"))
-        os.makedirs(tmp_dir, exist_ok=True)
-
-        # .exfat temporário na pasta escolhida pelo usuário (nunca dentro do dump)
-        exfat_tmp = os.path.join(tmp_dir, f"{name}.exfat")
-
-        # Passo 1: Dump > exfat
-        self.after(0, lambda: self._t4_phase_label.configure(
-            text="Passo 1/2 — Criando imagem exFAT...", text_color="white"))
-        cmd_ps1 = ["powershell.exe", "-NoProfile", "-ExecutionPolicy", "Bypass",
-                   "-File", _PS1_PATH, "-ImagePath", exfat_tmp,
-                   "-SourceDir", folder, "-ForceOverwrite"]
-        success = self._run_cmd_ps1(cmd_ps1, self._t4_bar, self._t4_phase_label,
-                                     self._t4_log, step_offset=0, total_steps=2)
-
-        if success:
-            # Passo 2: exfat > ffpfsc
-            if os.path.exists(output): os.remove(output)
-            # Staging sempre no %TEMP% do sistema (NTFS garantido)
-            staging_dir = os.path.join(os.environ.get("TEMP", os.path.expanduser("~")), "_mkpfs_staging")
-            os.makedirs(staging_dir, exist_ok=True)
-            cmd_mkpfs = [_MKPFS, "pack", "file", "--version", "PS5", "--inode-bits", "32",
-                         "--cpu-count", str(cpus), "--temp-folder", staging_dir, exfat_tmp, output]
-            success = self._run_cmd(cmd_mkpfs, self._t4_bar, self._t4_phase_label,
-                                     self._t4_log, "Passo 2/2")
-            shutil.rmtree(staging_dir, ignore_errors=True)
-
-        # Limpa .exfat temporário
-        if os.path.exists(exfat_tmp):
-            try: os.remove(exfat_tmp)
-            except: pass
-
-        self._finish(self._t4_phase_label, self._t4_btn, self._t4_start_time, success)
-
-    # ──────────────────────────────────────────────────────────
-    #  Tab 5 — extração
-    # ──────────────────────────────────────────────────────────
     def _t5_start(self):
         source = self._t5_source_file.get().strip()
         output = self._t5_output_folder.get().strip()
@@ -811,30 +895,25 @@ class App(ctk.CTk):
             self._log_append(self._t5_log, "[ERRO] Informe a pasta de saída.\n", clear=True); return
         self._t5_btn.configure(state="disabled", text="Extraindo...")
         self._t5_bar.start()
-        self._t5_phase_label.configure(text="Extraindo arquivos...", text_color="white")
+        self._t5_phase.configure(text="Extraindo arquivos...", text_color="white")
         self._log_clear(self._t5_log)
         self._t5_start_time = time.time()
         threading.Thread(target=self._t5_run, args=(source, output), daemon=True).start()
 
     def _t5_run(self, source, output):
         cmd = [_MKPFS, "unpack", "--no-progress"]
-        if self._t5_overwrite.get():
-            cmd.append("--overwrite")
-        if self._t5_deep.get():
-            cmd.append("--deep")
+        if self._t5_overwrite.get(): cmd.append("--overwrite")
+        if self._t5_deep.get():     cmd.append("--deep")
         cmd += [source, output]
         try:
-            env = os.environ.copy()
-            env["PYTHONUTF8"] = "1"
-            env["PYTHONIOENCODING"] = "utf-8"
+            env = os.environ.copy(); env["PYTHONUTF8"] = "1"; env["PYTHONIOENCODING"] = "utf-8"
             proc = subprocess.Popen(cmd, stdout=subprocess.PIPE, stderr=subprocess.STDOUT,
                                     text=True, encoding="utf-8", errors="replace",
                                     creationflags=subprocess.CREATE_NO_WINDOW, env=env)
             self._active_proc = proc
             for line in proc.stdout:
                 s = line.rstrip("\n")
-                if s:
-                    self.after(0, lambda l=s: self._log_append(self._t5_log, l + "\n"))
+                if s: self.after(0, lambda l=s: self._log_append(self._t5_log, l + "\n"))
             proc.stdout.close(); proc.wait()
             self._active_proc = None
             success = proc.returncode == 0
@@ -845,37 +924,80 @@ class App(ctk.CTk):
             self.after(0, lambda: self._log_append(self._t5_log, f"[ERRO] {e}\n"))
             success = False
         self.after(0, self._t5_bar.stop)
-        self._finish(self._t5_phase_label, self._t5_btn, self._t5_start_time, success, btn_label="Extrair")
+        self._finish(self._t5_phase, self._t5_btn, self._t5_start_time, success, "Extrair")
 
-    # ──────────────────────────────────────────────────────────
-    #  Core: mkpfs — separa progresso do log
-    # ──────────────────────────────────────────────────────────
-    def _run_cmd(self, cmd, bar, phase_label, log, step_prefix) -> bool:
+    # ────────────────────────────────────────────────────────
+    #  Game info loading
+    # ────────────────────────────────────────────────────────
+    def _load_info(self, folder: str):
+        sce_sys   = os.path.join(folder, "sce_sys")
+        json_path = os.path.join(sce_sys, "param.json")
+        sfo_path  = os.path.join(sce_sys, "param.sfo")
+        icon_path = os.path.join(sce_sys, "icon0.png")
+
+        icon_img = None
+        if os.path.isfile(icon_path):
+            try:
+                icon_img = Image.open(icon_path).convert("RGBA").resize((84, 84), Image.LANCZOS)
+            except: pass
+
+        raw = {}
+        if os.path.isfile(json_path):   raw = _parse_param_json(json_path)
+        elif os.path.isfile(sfo_path):  raw = _parse_sfo(sfo_path)
+
         try:
-            env = os.environ.copy()
-            env["PYTHONUTF8"] = "1"
-            env["PYTHONIOENCODING"] = "utf-8"
+            total = 0
+            for dp, _, fns in os.walk(folder):
+                for f in fns:
+                    try: total += os.path.getsize(os.path.join(dp, f))
+                    except OSError: pass
+            size_str = f"{total/(1<<30):.2f} GB" if total >= 1<<30 else f"{total/(1<<20):.2f} MB"
+        except: size_str = "—"
+
+        title    = str(raw.get("TITLE") or raw.get("TITLE_00") or "") if raw else ""
+        title_id = str(raw.get("TITLE_ID", "")) if raw else ""
+        versao   = str(raw.get("APP_VER", "")) if raw else ""
+
+        self._game_info = {"titulo": title, "title_id": title_id, "versao": versao, "tamanho": size_str}
+
+        def update():
+            if icon_img:
+                ctk_img = ctk.CTkImage(light_image=icon_img, dark_image=icon_img, size=(84, 84))
+                self._info_icon_lbl.configure(image=ctk_img, text="")
+                self._info_icon_lbl._ctk_image = ctk_img
+            self._info_title_lbl.configure(text=title or os.path.basename(folder.rstrip("/\\")))
+            self._info_tid_lbl.configure(text=title_id)
+            self._stat_ver.configure(text=versao or "—")
+            self._stat_size.configure(text=size_str)
+            self._src_status.configure(text="✓ Pronto para converter", text_color="#0d9488")
+            self._update_out_name()
+
+        self.after(0, update)
+
+    # ────────────────────────────────────────────────────────
+    #  Core runners
+    # ────────────────────────────────────────────────────────
+    def _run_cmd(self, cmd, bar, phase_label, log, step_prefix, success_file=None) -> bool:
+        try:
+            env = os.environ.copy(); env["PYTHONUTF8"] = "1"; env["PYTHONIOENCODING"] = "utf-8"
             proc = subprocess.Popen(cmd, stdout=subprocess.PIPE, stderr=subprocess.STDOUT,
                                     text=True, encoding="utf-8", errors="replace",
                                     creationflags=subprocess.CREATE_NO_WINDOW, env=env)
             self._active_proc = proc
-            wrote_ok = False
             for line in proc.stdout:
                 m = _RE_PROGRESS.search(line)
                 if m:
-                    pct   = int(m.group(1)) / 100.0
+                    pct = int(m.group(1)) / 100.0
                     phase = m.group(2).capitalize()
-                    txt   = f"{step_prefix} — {phase}  {int(pct*100)}%" if step_prefix else f"{phase}  {int(pct*100)}%"
+                    txt = f"{step_prefix} — {phase}  {int(pct*100)}%" if step_prefix else f"{phase}  {int(pct*100)}%"
                     self.after(0, lambda v=pct, t=txt: (bar.set(v), phase_label.configure(text=t, text_color="white")))
                 else:
                     s = line.rstrip("\n")
-                    # Detecta sucesso real pelo conteúdo (mkpfs 0.0.9 crasha no emoji após escrever ok)
-                    if "successfully wrote" in s.lower() or ("errors:" in s.lower() and "0" in s):
-                        wrote_ok = True
                     if s: self.after(0, lambda l=s: self._log_append(log, l + "\n"))
             proc.stdout.close(); proc.wait()
             self._active_proc = None
-            return proc.returncode == 0 or wrote_ok
+            file_ok = bool(success_file and os.path.exists(success_file) and os.path.getsize(success_file) > 0)
+            return proc.returncode == 0 or file_ok
         except FileNotFoundError:
             self.after(0, lambda: self._log_append(log, f"[ERRO] mkpfs não encontrado: {_MKPFS}\n"))
             return False
@@ -883,21 +1005,11 @@ class App(ctk.CTk):
             self.after(0, lambda: self._log_append(log, f"[ERRO] {e}\n"))
             return False
 
-    # ──────────────────────────────────────────────────────────
-    #  Core: PowerShell PS1 — parseia [N/Total] para a barra
-    # ──────────────────────────────────────────────────────────
-    def _run_cmd_ps1(self, cmd, bar, phase_label, log,
-                     step_offset=0, total_steps=1) -> bool:
-        step_labels = {
-            1: "Criando e montando imagem...",
-            2: "Formatando exFAT...",
-            3: "Copiando arquivos...",
-            4: "Desmontando volume...",
-        }
+    def _run_cmd_ps1(self, cmd, bar, phase_label, log, step_offset=0, total_steps=1) -> bool:
+        step_labels = {1: "Criando e montando imagem...", 2: "Formatando exFAT...",
+                       3: "Copiando arquivos...", 4: "Desmontando volume..."}
         try:
-            env = os.environ.copy()
-            env["PYTHONUTF8"] = "1"
-            env["PYTHONIOENCODING"] = "utf-8"
+            env = os.environ.copy(); env["PYTHONUTF8"] = "1"; env["PYTHONIOENCODING"] = "utf-8"
             proc = subprocess.Popen(cmd, stdout=subprocess.PIPE, stderr=subprocess.STDOUT,
                                     text=True, encoding="utf-8", errors="replace",
                                     creationflags=subprocess.CREATE_NO_WINDOW, env=env)
@@ -907,13 +1019,10 @@ class App(ctk.CTk):
                 if not s: continue
                 m = _RE_PS1_STEP.search(s)
                 if m:
-                    step  = int(m.group(1))
-                    total = int(m.group(2))
-                    # Se usado como sub-passo (total_steps=2), mapeia 0..0.5 ou 0.5..1
+                    step = int(m.group(1)); total = int(m.group(2))
                     pct = (step_offset + step / total) / total_steps
                     lbl = step_labels.get(step, s)
-                    if total_steps > 1:
-                        lbl = f"Passo 1/2 — {lbl}"
+                    if total_steps > 1: lbl = f"Passo 1/2 — {lbl}"
                     self.after(0, lambda v=pct, t=lbl: (bar.set(v), phase_label.configure(text=t, text_color="white")))
                 self.after(0, lambda l=s: self._log_append(log, l + "\n"))
             proc.stdout.close(); proc.wait()
@@ -923,17 +1032,14 @@ class App(ctk.CTk):
             self.after(0, lambda: self._log_append(log, f"[ERRO] {e}\n"))
             return False
 
-    # ──────────────────────────────────────────────────────────
+    # ────────────────────────────────────────────────────────
     #  Helpers
-    # ──────────────────────────────────────────────────────────
+    # ────────────────────────────────────────────────────────
     def _finish(self, phase_label, btn, start_time, success, btn_label="Converter"):
-        elapsed_str = self._fmt_elapsed(time.time() - start_time)
-        if success:
-            self.after(0, lambda s=elapsed_str: phase_label.configure(
-                text=f"✓ Concluído em {s}", text_color="#a3e635"))
-        else:
-            self.after(0, lambda s=elapsed_str: phase_label.configure(
-                text=f"✗ Falhou após {s}", text_color="#f87171"))
+        elapsed = self._fmt_elapsed(time.time() - start_time)
+        text  = f"✓ Concluído em {elapsed}" if success else f"✗ Falhou após {elapsed}"
+        color = "#a3e635" if success else "#f87171"
+        self.after(0, lambda: phase_label.configure(text=text, text_color=color))
         self.after(0, lambda: btn.configure(state="normal", text=btn_label))
 
     def _log_append(self, widget, text, clear=False):
@@ -942,6 +1048,13 @@ class App(ctk.CTk):
         widget.insert("end", text)
         widget.see("end")
         widget.configure(state="disabled")
+        # Mirror to popup view if open
+        if widget is self._build_log and self._log_view and self._log_window and self._log_window.winfo_exists():
+            self._log_view.configure(state="normal")
+            if clear: self._log_view.delete("1.0", "end")
+            self._log_view.insert("end", text)
+            self._log_view.see("end")
+            self._log_view.configure(state="disabled")
 
     def _log_clear(self, widget):
         widget.configure(state="normal")
@@ -949,9 +1062,8 @@ class App(ctk.CTk):
         widget.configure(state="disabled")
 
     def _fmt_elapsed(self, seconds: float) -> str:
-        seconds = int(seconds)
-        h, rem = divmod(seconds, 3600)
-        m, s = divmod(rem, 60)
+        s = int(seconds)
+        h, r = divmod(s, 3600); m, s = divmod(r, 60)
         if h: return f"{h}h {m:02d}m {s:02d}s"
         if m: return f"{m}m {s:02d}s"
         return f"{s}s"
@@ -962,6 +1074,25 @@ class App(ctk.CTk):
             try: self._active_proc.wait(timeout=3)
             except: self._active_proc.kill()
         self.destroy()
+
+    def _auto_install_osfmount(self):
+        if not os.path.isfile(_OSFMOUNT_SETUP): return
+        try:
+            subprocess.Popen([_OSFMOUNT_SETUP, "/VERYSILENT", "/SUPPRESSMSGBOXES", "/NORESTART"],
+                             creationflags=subprocess.CREATE_NO_WINDOW).wait()
+        except: pass
+
+    @staticmethod
+    def _find_free_drive() -> str | None:
+        try:
+            r = subprocess.run(["wmic", "logicaldisk", "get", "Caption"],
+                               capture_output=True, text=True,
+                               creationflags=subprocess.CREATE_NO_WINDOW, timeout=5)
+            used = {l.strip()[0].upper() for l in r.stdout.splitlines() if l.strip() and ':' in l.strip()}
+        except: used = set()
+        for letter in reversed(string.ascii_uppercase):
+            if letter not in used and letter not in ('A', 'B'): return letter + ':'
+        return None
 
 
 if __name__ == "__main__":
