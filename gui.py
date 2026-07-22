@@ -53,7 +53,7 @@ _RE_PS1_STEP = re.compile(r"\[(\d+)/(\d+)\]")
 ctk.set_appearance_mode("dark")
 ctk.set_default_color_theme("blue")
 
-VERSION = "1.0.7"
+VERSION = "1.0.8"
 
 CONFIG_PATH = os.path.join(os.environ.get("APPDATA", os.path.expanduser("~")), "PFS Converter", "config.json")
 
@@ -432,7 +432,7 @@ class App(ctk.CTk):
             name = os.path.basename(path.rstrip("/\\"))
             if not self._t1_temp_file.get():
                 self._t1_temp_file.set(os.path.join(path, "pfs_image.dat"))
-            out_dir = os.path.dirname(self._t1_output_file.get()) if self._t1_output_file.get() else path
+            out_dir = os.path.dirname(self._t1_output_file.get()) if self._t1_output_file.get() else os.path.dirname(path)
             self._t1_output_file.set(os.path.join(out_dir, f"{name}.ffpfsc"))
 
     def _t1_pick_temp(self):
@@ -500,7 +500,7 @@ class App(ctk.CTk):
         if path:
             self._t3_input_folder.set(path)
             name = os.path.basename(path.rstrip("/\\"))
-            out_dir = os.path.dirname(self._t3_output_file.get()) if self._t3_output_file.get() else path
+            out_dir = os.path.dirname(self._t3_output_file.get()) if self._t3_output_file.get() else os.path.dirname(path)
             self._t3_output_file.set(os.path.join(out_dir, f"{name}.exfat"))
 
     def _t3_pick_output(self):
@@ -525,7 +525,7 @@ class App(ctk.CTk):
         if path:
             self._t4_input_folder.set(path)
             name = os.path.basename(path.rstrip("/\\"))
-            out_dir = os.path.dirname(self._t4_output_file.get()) if self._t4_output_file.get() else path
+            out_dir = os.path.dirname(self._t4_output_file.get()) if self._t4_output_file.get() else os.path.dirname(path)
             self._t4_output_file.set(os.path.join(out_dir, f"{name}.ffpfsc"))
 
     def _t4_pick_temp_folder(self):
