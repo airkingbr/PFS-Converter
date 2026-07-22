@@ -53,7 +53,7 @@ _RE_PS1_STEP = re.compile(r"\[(\d+)/(\d+)\]")
 ctk.set_appearance_mode("dark")
 ctk.set_default_color_theme("blue")
 
-VERSION = "1.0.8"
+VERSION = "1.0.9"
 
 CONFIG_PATH = os.path.join(os.environ.get("APPDATA", os.path.expanduser("~")), "PFS Converter", "config.json")
 
@@ -79,7 +79,7 @@ class App(ctk.CTk):
     def __init__(self):
         super().__init__()
         self.title(f"PFS Converter v{VERSION}")
-        self.geometry("720x880")
+        self.geometry("720x920")
         self.resizable(False, False)
         if os.path.isfile(_ICON_PATH):
             self.iconbitmap(_ICON_PATH)
@@ -109,6 +109,12 @@ class App(ctk.CTk):
         self._t4_temp_folder  = ctk.StringVar(value=cfg.get("t4_temp_folder", ""))
         self._t4_output_file  = ctk.StringVar(value=cfg.get("t4_output_dir", ""))
 
+        # Tab 5 — Extrair
+        self._t5_source_file   = ctk.StringVar()
+        self._t5_output_folder = ctk.StringVar(value=cfg.get("t5_output_dir", ""))
+        self._t5_deep          = ctk.BooleanVar(value=True)
+        self._t5_overwrite     = ctk.BooleanVar(value=True)
+
         self._build_ui()
 
         # Instala OSFMount silenciosamente se não estiver presente
@@ -130,11 +136,13 @@ class App(ctk.CTk):
         self._tabs.add("exfat > ffpfsc")
         self._tabs.add("Dump > exfat")
         self._tabs.add("Dump > exfat > ffpfsc")
+        self._tabs.add("Extrair")
 
         self._build_tab1(self._tabs.tab("Dump > ffpfsc"))
         self._build_tab2(self._tabs.tab("exfat > ffpfsc"))
         self._build_tab3(self._tabs.tab("Dump > exfat"))
         self._build_tab4(self._tabs.tab("Dump > exfat > ffpfsc"))
+        self._build_tab5(self._tabs.tab("Extrair"))
 
     # ──────────────────────────────────────────────────────────
     #  Tab 1 — Dump > ffpfsc
@@ -376,6 +384,55 @@ class App(ctk.CTk):
         self._t4_log = ctk.CTkTextbox(parent, height=200, font=ctk.CTkFont(family="Courier New", size=11), state="disabled")
         self._t4_log.pack(fill="both", expand=True, padx=16, pady=(0, 10))
 
+    # ──────────────────────────────────────────────────────────
+    #  Tab 5 — Extrair
+    # ──────────────────────────────────────────────────────────
+    def _build_tab5(self, parent):
+        pad = {"padx": 16, "pady": (8, 0)}
+
+        ctk.CTkLabel(parent, text="Extração de arquivos a partir de imagem PFS (.ffpfsc, .ffpfs, .exfat)",
+                     anchor="w", font=ctk.CTkFont(size=11), text_color="gray").pack(fill="x", padx=16, pady=(8, 0))
+
+        self._tab_section(parent, "Arquivo de origem (.ffpfsc / .ffpfs / .exfat)")
+        r1 = ctk.CTkFrame(parent, fg_color="transparent")
+        r1.pack(fill="x", **pad)
+        ctk.CTkEntry(r1, textvariable=self._t5_source_file,
+                     placeholder_text="Selecione o arquivo de imagem...",
+                     width=490).pack(side="left", padx=(0, 8))
+        ctk.CTkButton(r1, text="Selecionar", width=110,
+                      command=self._t5_pick_source).pack(side="left")
+
+        self._tab_section(parent, "Pasta de saída")
+        r2 = ctk.CTkFrame(parent, fg_color="transparent")
+        r2.pack(fill="x", **pad)
+        ctk.CTkEntry(r2, textvariable=self._t5_output_folder,
+                     placeholder_text="Onde extrair os arquivos...",
+                     width=490).pack(side="left", padx=(0, 8))
+        ctk.CTkButton(r2, text="Selecionar", width=110,
+                      command=self._t5_pick_output).pack(side="left")
+
+        self._tab_section(parent, "Opções")
+        opt_row = ctk.CTkFrame(parent, fg_color="transparent")
+        opt_row.pack(fill="x", padx=16, pady=(6, 0))
+        ctk.CTkCheckBox(opt_row, text="Extrair arquivos internos (--deep)",
+                        variable=self._t5_deep).pack(side="left", padx=(0, 24))
+        ctk.CTkCheckBox(opt_row, text="Sobrescrever existentes (--overwrite)",
+                        variable=self._t5_overwrite).pack(side="left")
+
+        self._t5_btn = ctk.CTkButton(parent, text="Extrair", height=40,
+                                     font=ctk.CTkFont(size=14, weight="bold"),
+                                     command=self._t5_start)
+        self._t5_btn.pack(pady=(14, 0), padx=16, fill="x")
+
+        self._t5_phase_label = ctk.CTkLabel(parent, text="", anchor="w", font=ctk.CTkFont(size=12))
+        self._t5_phase_label.pack(fill="x", padx=16, pady=(10, 2))
+        self._t5_bar = ctk.CTkProgressBar(parent, height=18, mode="indeterminate")
+        self._t5_bar.pack(fill="x", padx=16)
+
+        ctk.CTkLabel(parent, text="Log", anchor="w").pack(fill="x", padx=16, pady=(10, 2))
+        self._t5_log = ctk.CTkTextbox(parent, height=200, font=ctk.CTkFont(family="Courier New", size=11), state="disabled")
+        self._t5_log.pack(fill="both", expand=True, padx=16, pady=(0, 10))
+
     def _tab_section(self, parent, title):
         ctk.CTkLabel(parent, text=title, anchor="w",
                      font=ctk.CTkFont(weight="bold")).pack(fill="x", padx=16, pady=(12, 2))
@@ -549,6 +606,33 @@ class App(ctk.CTk):
             _save_config({**_load_config(), "t4_output_dir": os.path.dirname(path)})
 
     # ──────────────────────────────────────────────────────────
+    #  Tab 5 — pickers
+    # ──────────────────────────────────────────────────────────
+    def _t5_pick_source(self):
+        current = self._t5_source_file.get()
+        path = filedialog.askopenfilename(
+            title="Selecione o arquivo de imagem",
+            filetypes=[("Imagens PFS", "*.ffpfsc *.ffpfs *.exfat"), ("All files", "*.*")],
+            initialdir=os.path.dirname(current) if current else None,
+        )
+        if path:
+            self._t5_source_file.set(path)
+            base = os.path.splitext(os.path.basename(path))[0]
+            out_dir = os.path.dirname(self._t5_output_folder.get()) if self._t5_output_folder.get() else os.path.dirname(path)
+            self._t5_output_folder.set(os.path.join(out_dir, base))
+            _save_config({**_load_config(), "t5_output_dir": os.path.dirname(path)})
+
+    def _t5_pick_output(self):
+        current = self._t5_output_folder.get()
+        path = filedialog.askdirectory(
+            title="Selecione a pasta de saída",
+            initialdir=current if current else None,
+        )
+        if path:
+            self._t5_output_folder.set(path)
+            _save_config({**_load_config(), "t5_output_dir": path})
+
+    # ──────────────────────────────────────────────────────────
     #  Tab 1 — conversão
     # ──────────────────────────────────────────────────────────
     def _t1_start(self):
@@ -697,6 +781,51 @@ class App(ctk.CTk):
         self._finish(self._t4_phase_label, self._t4_btn, self._t4_start_time, success)
 
     # ──────────────────────────────────────────────────────────
+    #  Tab 5 — extração
+    # ──────────────────────────────────────────────────────────
+    def _t5_start(self):
+        source = self._t5_source_file.get().strip()
+        output = self._t5_output_folder.get().strip()
+        if not source or not os.path.isfile(source):
+            self._log_append(self._t5_log, "[ERRO] Selecione um arquivo de imagem válido.\n", clear=True); return
+        if not output:
+            self._log_append(self._t5_log, "[ERRO] Informe a pasta de saída.\n", clear=True); return
+        self._t5_btn.configure(state="disabled", text="Extraindo...")
+        self._t5_bar.start()
+        self._t5_phase_label.configure(text="Extraindo arquivos...", text_color="white")
+        self._log_clear(self._t5_log)
+        self._t5_start_time = time.time()
+        threading.Thread(target=self._t5_run, args=(source, output), daemon=True).start()
+
+    def _t5_run(self, source, output):
+        cmd = [_MKPFS, "unpack", "--no-progress"]
+        if self._t5_overwrite.get():
+            cmd.append("--overwrite")
+        if self._t5_deep.get():
+            cmd.append("--deep")
+        cmd += [source, output]
+        try:
+            proc = subprocess.Popen(cmd, stdout=subprocess.PIPE, stderr=subprocess.STDOUT,
+                                    text=True, encoding="utf-8", errors="replace",
+                                    creationflags=subprocess.CREATE_NO_WINDOW)
+            self._active_proc = proc
+            for line in proc.stdout:
+                s = line.rstrip("\n")
+                if s:
+                    self.after(0, lambda l=s: self._log_append(self._t5_log, l + "\n"))
+            proc.stdout.close(); proc.wait()
+            self._active_proc = None
+            success = proc.returncode == 0
+        except FileNotFoundError:
+            self.after(0, lambda: self._log_append(self._t5_log, f"[ERRO] mkpfs não encontrado: {_MKPFS}\n"))
+            success = False
+        except Exception as e:
+            self.after(0, lambda: self._log_append(self._t5_log, f"[ERRO] {e}\n"))
+            success = False
+        self.after(0, self._t5_bar.stop)
+        self._finish(self._t5_phase_label, self._t5_btn, self._t5_start_time, success, btn_label="Extrair")
+
+    # ──────────────────────────────────────────────────────────
     #  Core: mkpfs — separa progresso do log
     # ──────────────────────────────────────────────────────────
     def _run_cmd(self, cmd, bar, phase_label, log, step_prefix) -> bool:
@@ -765,7 +894,7 @@ class App(ctk.CTk):
     # ──────────────────────────────────────────────────────────
     #  Helpers
     # ──────────────────────────────────────────────────────────
-    def _finish(self, phase_label, btn, start_time, success):
+    def _finish(self, phase_label, btn, start_time, success, btn_label="Converter"):
         elapsed_str = self._fmt_elapsed(time.time() - start_time)
         if success:
             self.after(0, lambda s=elapsed_str: phase_label.configure(
@@ -773,7 +902,7 @@ class App(ctk.CTk):
         else:
             self.after(0, lambda s=elapsed_str: phase_label.configure(
                 text=f"✗ Falhou após {s}", text_color="#f87171"))
-        self.after(0, lambda: btn.configure(state="normal", text="Converter"))
+        self.after(0, lambda: btn.configure(state="normal", text=btn_label))
 
     def _log_append(self, widget, text, clear=False):
         widget.configure(state="normal")
