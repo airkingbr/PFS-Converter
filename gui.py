@@ -53,7 +53,7 @@ _RE_PS1_STEP = re.compile(r"\[(\d+)/(\d+)\]")
 ctk.set_appearance_mode("dark")
 ctk.set_default_color_theme("blue")
 
-VERSION = "1.0.9"
+VERSION = "1.1.0"
 
 CONFIG_PATH = os.path.join(os.environ.get("APPDATA", os.path.expanduser("~")), "PFS Converter", "config.json")
 
@@ -90,6 +90,7 @@ class App(ctk.CTk):
 
         cfg = _load_config()
         self._saved_cpus = int(cfg.get("cpu_count", self._cpu_count))
+        self._cpu_auto = ctk.BooleanVar(value=False)
 
         # Tab 1 — Dump > ffpfsc
         self._t1_input_folder = ctk.StringVar()
@@ -185,6 +186,8 @@ class App(ctk.CTk):
         cpu_row.pack(fill="x", padx=16, pady=(4, 0))
         self._t1_cpu_label = ctk.CTkLabel(cpu_row, text=f"{self._saved_cpus} / {self._cpu_count}", width=60)
         self._t1_cpu_label.pack(side="right")
+        ctk.CTkCheckBox(cpu_row, text="Auto", variable=self._cpu_auto,
+                        command=self._on_cpu_auto_toggle, width=70).pack(side="right", padx=(0, 8))
         self._t1_cpu_slider = ctk.CTkSlider(cpu_row, from_=1, to=self._cpu_count,
                                              number_of_steps=self._cpu_count - 1,
                                              command=self._on_cpu_slider)
@@ -238,6 +241,8 @@ class App(ctk.CTk):
         cpu_row.pack(fill="x", padx=16, pady=(4, 0))
         self._t2_cpu_label = ctk.CTkLabel(cpu_row, text=f"{self._saved_cpus} / {self._cpu_count}", width=60)
         self._t2_cpu_label.pack(side="right")
+        ctk.CTkCheckBox(cpu_row, text="Auto", variable=self._cpu_auto,
+                        command=self._on_cpu_auto_toggle, width=70).pack(side="right", padx=(0, 8))
         self._t2_cpu_slider = ctk.CTkSlider(cpu_row, from_=1, to=self._cpu_count,
                                              number_of_steps=self._cpu_count - 1,
                                              command=self._on_cpu_slider)
@@ -363,6 +368,8 @@ class App(ctk.CTk):
         cpu_row.pack(fill="x", padx=16, pady=(4, 0))
         self._t4_cpu_label = ctk.CTkLabel(cpu_row, text=f"{self._saved_cpus} / {self._cpu_count}", width=60)
         self._t4_cpu_label.pack(side="right")
+        ctk.CTkCheckBox(cpu_row, text="Auto", variable=self._cpu_auto,
+                        command=self._on_cpu_auto_toggle, width=70).pack(side="right", padx=(0, 8))
         self._t4_cpu_slider = ctk.CTkSlider(cpu_row, from_=1, to=self._cpu_count,
                                              number_of_steps=self._cpu_count - 1,
                                              command=self._on_cpu_slider)
@@ -447,6 +454,18 @@ class App(ctk.CTk):
         for sl in (self._t1_cpu_slider, self._t2_cpu_slider, self._t4_cpu_slider):
             sl.set(cpus)
         _save_config({**_load_config(), "cpu_count": cpus})
+
+    def _on_cpu_auto_toggle(self):
+        auto = self._cpu_auto.get()
+        state = "disabled" if auto else "normal"
+        for sl in (self._t1_cpu_slider, self._t2_cpu_slider, self._t4_cpu_slider):
+            sl.configure(state=state)
+        label = "Auto (0)" if auto else f"{int(self._t1_cpu_slider.get())} / {self._cpu_count}"
+        for lbl in (self._t1_cpu_label, self._t2_cpu_label, self._t4_cpu_label):
+            lbl.configure(text=label)
+
+    def _get_cpus(self):
+        return 0 if self._cpu_auto.get() else int(self._t1_cpu_slider.get())
 
     # ──────────────────────────────────────────────────────────
     #  OSFMount — instalação
@@ -645,7 +664,7 @@ class App(ctk.CTk):
             self._log_append(self._t1_log, "[ERRO] Informe o caminho do arquivo temporário.\n", clear=True); return
         if not output:
             self._log_append(self._t1_log, "[ERRO] Informe o caminho do arquivo de saída.\n", clear=True); return
-        cpus = int(self._t1_cpu_slider.get())
+        cpus = self._get_cpus()
         self._t1_btn.configure(state="disabled", text="Convertendo...")
         self._t1_bar.set(0); self._t1_phase_label.configure(text="")
         self._log_clear(self._t1_log)
@@ -681,7 +700,7 @@ class App(ctk.CTk):
             self._log_append(self._t2_log, "[ERRO] Selecione um arquivo .exfat válido.\n", clear=True); return
         if not output:
             self._log_append(self._t2_log, "[ERRO] Informe o caminho do arquivo de saída.\n", clear=True); return
-        cpus = int(self._t2_cpu_slider.get())
+        cpus = self._get_cpus()
         self._t2_btn.configure(state="disabled", text="Convertendo...")
         self._t2_bar.set(0); self._t2_phase_label.configure(text="")
         self._log_clear(self._t2_log)
@@ -738,7 +757,7 @@ class App(ctk.CTk):
             self._log_append(self._t4_log, "[ERRO] Informe o caminho do arquivo de saída.\n", clear=True); return
         if not _find_osfmount():
             self._log_append(self._t4_log, "[ERRO] OSFMount não encontrado.\n", clear=True); return
-        cpus = int(self._t4_cpu_slider.get())
+        cpus = self._get_cpus()
         self._t4_btn.configure(state="disabled", text="Convertendo...")
         self._t4_bar.set(0); self._t4_phase_label.configure(text="")
         self._log_clear(self._t4_log)
@@ -805,9 +824,11 @@ class App(ctk.CTk):
             cmd.append("--deep")
         cmd += [source, output]
         try:
+            env = os.environ.copy()
+            env["PYTHONIOENCODING"] = "utf-8"
             proc = subprocess.Popen(cmd, stdout=subprocess.PIPE, stderr=subprocess.STDOUT,
                                     text=True, encoding="utf-8", errors="replace",
-                                    creationflags=subprocess.CREATE_NO_WINDOW)
+                                    creationflags=subprocess.CREATE_NO_WINDOW, env=env)
             self._active_proc = proc
             for line in proc.stdout:
                 s = line.rstrip("\n")
@@ -830,9 +851,11 @@ class App(ctk.CTk):
     # ──────────────────────────────────────────────────────────
     def _run_cmd(self, cmd, bar, phase_label, log, step_prefix) -> bool:
         try:
+            env = os.environ.copy()
+            env["PYTHONIOENCODING"] = "utf-8"
             proc = subprocess.Popen(cmd, stdout=subprocess.PIPE, stderr=subprocess.STDOUT,
                                     text=True, encoding="utf-8", errors="replace",
-                                    creationflags=subprocess.CREATE_NO_WINDOW)
+                                    creationflags=subprocess.CREATE_NO_WINDOW, env=env)
             self._active_proc = proc
             for line in proc.stdout:
                 m = _RE_PROGRESS.search(line)
@@ -866,9 +889,11 @@ class App(ctk.CTk):
             4: "Desmontando volume...",
         }
         try:
+            env = os.environ.copy()
+            env["PYTHONIOENCODING"] = "utf-8"
             proc = subprocess.Popen(cmd, stdout=subprocess.PIPE, stderr=subprocess.STDOUT,
                                     text=True, encoding="utf-8", errors="replace",
-                                    creationflags=subprocess.CREATE_NO_WINDOW)
+                                    creationflags=subprocess.CREATE_NO_WINDOW, env=env)
             self._active_proc = proc
             for line in proc.stdout:
                 s = line.rstrip("\n")
