@@ -53,7 +53,7 @@ _RE_PS1_STEP = re.compile(r"\[(\d+)/(\d+)\]")
 ctk.set_appearance_mode("dark")
 ctk.set_default_color_theme("blue")
 
-VERSION = "1.1.0"
+VERSION = "1.1.1"
 
 CONFIG_PATH = os.path.join(os.environ.get("APPDATA", os.path.expanduser("~")), "PFS Converter", "config.json")
 
@@ -825,6 +825,7 @@ class App(ctk.CTk):
         cmd += [source, output]
         try:
             env = os.environ.copy()
+            env["PYTHONUTF8"] = "1"
             env["PYTHONIOENCODING"] = "utf-8"
             proc = subprocess.Popen(cmd, stdout=subprocess.PIPE, stderr=subprocess.STDOUT,
                                     text=True, encoding="utf-8", errors="replace",
@@ -852,11 +853,13 @@ class App(ctk.CTk):
     def _run_cmd(self, cmd, bar, phase_label, log, step_prefix) -> bool:
         try:
             env = os.environ.copy()
+            env["PYTHONUTF8"] = "1"
             env["PYTHONIOENCODING"] = "utf-8"
             proc = subprocess.Popen(cmd, stdout=subprocess.PIPE, stderr=subprocess.STDOUT,
                                     text=True, encoding="utf-8", errors="replace",
                                     creationflags=subprocess.CREATE_NO_WINDOW, env=env)
             self._active_proc = proc
+            wrote_ok = False
             for line in proc.stdout:
                 m = _RE_PROGRESS.search(line)
                 if m:
@@ -866,10 +869,13 @@ class App(ctk.CTk):
                     self.after(0, lambda v=pct, t=txt: (bar.set(v), phase_label.configure(text=t, text_color="white")))
                 else:
                     s = line.rstrip("\n")
+                    # Detecta sucesso real pelo conteúdo (mkpfs 0.0.9 crasha no emoji após escrever ok)
+                    if "successfully wrote" in s.lower() or ("errors:" in s.lower() and "0" in s):
+                        wrote_ok = True
                     if s: self.after(0, lambda l=s: self._log_append(log, l + "\n"))
             proc.stdout.close(); proc.wait()
             self._active_proc = None
-            return proc.returncode == 0
+            return proc.returncode == 0 or wrote_ok
         except FileNotFoundError:
             self.after(0, lambda: self._log_append(log, f"[ERRO] mkpfs não encontrado: {_MKPFS}\n"))
             return False
@@ -890,6 +896,7 @@ class App(ctk.CTk):
         }
         try:
             env = os.environ.copy()
+            env["PYTHONUTF8"] = "1"
             env["PYTHONIOENCODING"] = "utf-8"
             proc = subprocess.Popen(cmd, stdout=subprocess.PIPE, stderr=subprocess.STDOUT,
                                     text=True, encoding="utf-8", errors="replace",
