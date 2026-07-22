@@ -183,6 +183,9 @@ python -m PyInstaller --noconfirm --onefile --noconsole --uac-admin \
 
 ## Histórico de versões
 
+### v1.2.1
+- Log abre ao lado da janela principal (sem sobreposição), com a mesma altura
+
 ### v1.2.0
 - **Redesign completo da interface** — layout 4 painéis (2×2)
 - Source mode: pasta de dump **ou** arquivo `.exfat` existente
