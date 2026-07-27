@@ -183,6 +183,12 @@ python -m PyInstaller --noconfirm --onefile --noconsole --uac-admin \
 
 ## Histórico de versões
 
+### v1.2.2
+- Extração de ffpfsc em dois passos automáticos:
+  - Intermediário `.dat` (PFS Raw): segunda extração automática para pasta dump
+  - Intermediário `.exfat` (PFS exFAT): mantém o `.exfat` por padrão, ou extrai para pasta com a opção "Extrair exFAT → pasta dump"
+- Nova checkbox na aba Extrair: **Extrair exFAT → pasta dump**
+
 ### v1.2.1
 - Log abre ao lado da janela principal (sem sobreposição), com a mesma altura
 
