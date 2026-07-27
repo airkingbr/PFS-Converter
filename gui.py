@@ -133,6 +133,7 @@ class App(ctk.CTk):
         self._t5_output_folder = ctk.StringVar(value=cfg.get("t5_output_dir", ""))
         self._t5_deep          = ctk.BooleanVar(value=True)
         self._t5_overwrite     = ctk.BooleanVar(value=True)
+        self._t5_extract_exfat = ctk.BooleanVar(value=False)
 
         self._build_ui()
 
@@ -547,9 +548,13 @@ class App(ctk.CTk):
         ctk.CTkButton(r2, text="Browse", width=90, command=self._t5_pick_out).pack(side="left")
 
         opt = ctk.CTkFrame(card, fg_color="transparent")
-        opt.pack(fill="x", padx=16, pady=(0, 10))
+        opt.pack(fill="x", padx=16, pady=(0, 4))
         ctk.CTkCheckBox(opt, text="Extrair arquivos internos (--deep)", variable=self._t5_deep).pack(side="left", padx=(0, 24))
         ctk.CTkCheckBox(opt, text="Sobrescrever existentes (--overwrite)", variable=self._t5_overwrite).pack(side="left")
+
+        opt2 = ctk.CTkFrame(card, fg_color="transparent")
+        opt2.pack(fill="x", padx=16, pady=(0, 10))
+        ctk.CTkCheckBox(opt2, text="Extrair exFAT → pasta dump (se ffpfsc contiver exFAT)", variable=self._t5_extract_exfat).pack(side="left")
 
         self._t5_btn = ctk.CTkButton(card, text="Extrair", height=44,
                                       fg_color="#0d9488", hover_color="#0a7b72",
@@ -906,23 +911,80 @@ class App(ctk.CTk):
         self._t5_start_time = time.time()
         threading.Thread(target=self._t5_run, args=(source, output), daemon=True).start()
 
-    def _t5_run(self, source, output):
+    def _t5_unpack(self, source, dest, deep=True):
+        """Run mkpfs unpack and stream output. Returns returncode."""
         cmd = [_MKPFS, "unpack", "--no-progress"]
         if self._t5_overwrite.get(): cmd.append("--overwrite")
-        if self._t5_deep.get():     cmd.append("--deep")
-        cmd += [source, output]
+        if deep and self._t5_deep.get(): cmd.append("--deep")
+        cmd += [source, dest]
+        env = os.environ.copy(); env["PYTHONUTF8"] = "1"; env["PYTHONIOENCODING"] = "utf-8"
+        proc = subprocess.Popen(cmd, stdout=subprocess.PIPE, stderr=subprocess.STDOUT,
+                                text=True, encoding="utf-8", errors="replace",
+                                creationflags=subprocess.CREATE_NO_WINDOW, env=env)
+        self._active_proc = proc
+        for line in proc.stdout:
+            s = line.rstrip("\n")
+            if s: self.after(0, lambda l=s: self._log_append(self._t5_log, l + "\n"))
+        proc.stdout.close(); proc.wait()
+        self._active_proc = None
+        return proc.returncode
+
+    def _t5_run(self, source, output):
+        import tempfile, shutil, glob as _glob
+        ext = os.path.splitext(source)[1].lower()
+        success = False
         try:
             env = os.environ.copy(); env["PYTHONUTF8"] = "1"; env["PYTHONIOENCODING"] = "utf-8"
-            proc = subprocess.Popen(cmd, stdout=subprocess.PIPE, stderr=subprocess.STDOUT,
-                                    text=True, encoding="utf-8", errors="replace",
-                                    creationflags=subprocess.CREATE_NO_WINDOW, env=env)
-            self._active_proc = proc
-            for line in proc.stdout:
-                s = line.rstrip("\n")
-                if s: self.after(0, lambda l=s: self._log_append(self._t5_log, l + "\n"))
-            proc.stdout.close(); proc.wait()
-            self._active_proc = None
-            success = proc.returncode == 0
+
+            if ext == ".exfat":
+                # Direct exfat → unpack to output folder
+                self.after(0, lambda: self._t5_phase.configure(text="Extraindo exFAT...", text_color="white"))
+                rc = self._t5_unpack(source, output)
+                success = rc == 0
+
+            else:
+                # ffpfsc / ffpfs — stage to temp dir first to detect intermediate type
+                stage = tempfile.mkdtemp(prefix="pfs_stage_")
+                try:
+                    self.after(0, lambda: self._t5_phase.configure(text="Passo 1/2 — descomprimindo...", text_color="white"))
+                    rc = self._t5_unpack(source, stage, deep=False)
+                    if rc != 0:
+                        success = False
+                    else:
+                        # Detect what came out
+                        dat_files  = _glob.glob(os.path.join(stage, "*.dat"))
+                        exfat_files = _glob.glob(os.path.join(stage, "*.exfat"))
+
+                        if dat_files:
+                            dat = dat_files[0]
+                            self.after(0, lambda: self._t5_phase.configure(text="Passo 2/2 — extraindo dump...", text_color="white"))
+                            self.after(0, lambda: self._log_append(self._t5_log, f"[INFO] Intermediário: {os.path.basename(dat)} → extraindo para pasta...\n"))
+                            rc2 = self._t5_unpack(dat, output)
+                            success = rc2 == 0
+
+                        elif exfat_files:
+                            exfat = exfat_files[0]
+                            if self._t5_extract_exfat.get():
+                                self.after(0, lambda: self._t5_phase.configure(text="Passo 2/2 — extraindo exFAT...", text_color="white"))
+                                self.after(0, lambda: self._log_append(self._t5_log, f"[INFO] Intermediário: {os.path.basename(exfat)} → extraindo para pasta...\n"))
+                                rc2 = self._t5_unpack(exfat, output)
+                                success = rc2 == 0
+                            else:
+                                # Keep exfat as output
+                                os.makedirs(output, exist_ok=True)
+                                dest = os.path.join(output, os.path.basename(exfat))
+                                self.after(0, lambda: self._log_append(self._t5_log, f"[INFO] exFAT extraído: {dest}\n"))
+                                shutil.move(exfat, dest)
+                                success = True
+                        else:
+                            # Unknown intermediates — just move everything to output
+                            os.makedirs(output, exist_ok=True)
+                            for f in os.listdir(stage):
+                                shutil.move(os.path.join(stage, f), os.path.join(output, f))
+                            success = True
+                finally:
+                    shutil.rmtree(stage, ignore_errors=True)
+
         except FileNotFoundError:
             self.after(0, lambda: self._log_append(self._t5_log, f"[ERRO] mkpfs não encontrado: {_MKPFS}\n"))
             success = False
