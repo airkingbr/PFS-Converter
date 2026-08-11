@@ -883,11 +883,12 @@ class App(ctk.CTk):
             if fmt == "pfs_exfat" and not _find_osfmount():
                 self._log_append(self._build_log, "[ERRO] OSFMount não encontrado (necessário para PFS exFAT).\n", clear=True)
                 self._build_btn.configure(state="normal", text="▶  Build"); return
+            gen_ampr = self._ampr_index.get()
             threading.Thread(target=self._do_build,
-                             args=(folder, output, temp_dir, cpus, fmt, comp_eng, comp_lvl),
+                             args=(folder, output, temp_dir, cpus, fmt, comp_eng, comp_lvl, gen_ampr),
                              daemon=True).start()
 
-    def _do_build(self, folder, output, temp_dir, cpus, fmt, comp_eng, comp_lvl):
+    def _do_build(self, folder, output, temp_dir, cpus, fmt, comp_eng, comp_lvl, gen_ampr=False):
         name = os.path.basename(folder.rstrip("/\\"))
         staging = os.path.join(os.environ.get("TEMP", os.path.expanduser("~")), "_mkpfs_staging")
         os.makedirs(staging, exist_ok=True)
@@ -901,6 +902,24 @@ class App(ctk.CTk):
                 cmd += ["--compression-level", comp_lvl]
             cmd += [src, dst]
             return cmd
+
+        if gen_ampr:
+            self.after(0, lambda: self._build_phase.configure(text="Gerando AMPR index...", text_color="white"))
+            try:
+                ok = build_ampr_index(folder)
+                ampr_path = os.path.join(folder, "ampr_emu.index")
+                exists = os.path.isfile(ampr_path)
+                if ok and exists:
+                    msg = f"[AMPR] Index gerado: {ampr_path}\n"
+                elif not ok:
+                    msg = f"[AMPR ERRO] build_ampr_index retornou False — pasta inválida: {folder}\n"
+                else:
+                    msg = f"[AMPR ERRO] Função retornou True mas arquivo não encontrado em: {ampr_path}\n"
+                self.after(0, lambda m=msg: self._log_append(self._build_log, m))
+            except Exception as e:
+                import traceback
+                tb = traceback.format_exc()
+                self.after(0, lambda m=tb: self._log_append(self._build_log, f"[AMPR ERRO] {m}\n"))
 
         success = False
         try:
@@ -947,13 +966,6 @@ class App(ctk.CTk):
                     except: pass
         finally:
             shutil.rmtree(staging, ignore_errors=True)
-
-        if success and self._ampr_index.get():
-            self.after(0, lambda: self._build_phase.configure(text="Gerando AMPR index...", text_color="white"))
-            try:
-                build_ampr_index(folder, log_fn=lambda msg: self.after(0, lambda m=msg: self._log_append(self._build_log, m)))
-            except Exception as e:
-                self.after(0, lambda: self._log_append(self._build_log, f"[AMPR ERRO] {e}\n"))
 
         self._finish(self._build_phase, self._build_btn, self._build_start_time, success, "▶  Build")
 
