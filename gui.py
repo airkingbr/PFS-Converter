@@ -45,7 +45,7 @@ _RE_PS1_STEP = re.compile(r"\[(\d+)/(\d+)\]")
 ctk.set_appearance_mode("dark")
 ctk.set_default_color_theme("blue")
 
-VERSION = "1.2.0"
+VERSION = "1.2.2"
 
 CONFIG_PATH = os.path.join(os.environ.get("APPDATA", os.path.expanduser("~")), "PFS Converter", "config.json")
 
@@ -59,6 +59,95 @@ def _save_config(data: dict):
         os.makedirs(os.path.dirname(CONFIG_PATH), exist_ok=True)
         with open(CONFIG_PATH, "w", encoding="utf-8") as f: json.dump(data, f, indent=2, ensure_ascii=False)
     except: pass
+
+# ── AMPR index builder ───────────────────────────────────
+from dataclasses import dataclass, field as _field
+
+@dataclass
+class _HCS:
+    probe_steps: int = 0; probed_entries: int = 0; max_probe: int = 0
+    duplicate_hash_groups: int = 0; duplicate_hash_entries: int = 0
+    duplicate_hash_samples: list = _field(default_factory=list)
+
+def _ampr_key(path: str) -> str:
+    return path.replace("\\", "/").lower()
+
+def _ampr_fnv1a64(path: str) -> int:
+    h = 1469598103934665603
+    for ch in _ampr_key(path):
+        h ^= ord(ch); h = (h * 1099511628211) & 0xFFFFFFFFFFFFFFFF
+    return h or 1
+
+def _ampr_slot_count(n: int) -> int:
+    s = 2
+    while s < n * 2: s <<= 1
+    return s
+
+def _ampr_build_slots(rows):
+    slots = [(0, 0, 0)] * _ampr_slot_count(len(rows))
+    mask = len(slots) - 1
+    dup_hashes: set = set()
+    for idx, (_, _, path) in enumerate(rows):
+        h = _ampr_fnv1a64(path); pos = h & mask; dup = False; probe = 0
+        while slots[pos][1] != 0:
+            if slots[pos][0] == h:
+                oh, oi, of_ = slots[pos]; slots[pos] = (oh, oi, of_ | 1)
+                if not dup: dup_hashes.add(h)
+                dup = True
+            pos = (pos + 1) & mask; probe += 1
+        slots[pos] = (h, idx + 1, 1 if dup else 0)
+    return slots
+
+def _ampr_write_index(rows: list, output_path: str) -> None:
+    from pathlib import Path
+    output = Path(output_path).resolve()
+    output.parent.mkdir(parents=True, exist_ok=True)
+    tmp = output.with_suffix(output.suffix + ".tmp")
+    rows = sorted(rows, key=lambda r: _ampr_key(r[2]))
+    rec_s = struct.Struct("<IIQq")
+    hsl_s = struct.Struct("<QII")
+    hdr_s = struct.Struct("<8sIIQQQII")
+    path_blob = bytearray(); records = bytearray()
+    for size, mtime, path in rows:
+        enc = path.encode("utf-8") + b"\x00"
+        records += rec_s.pack(len(path_blob), len(enc) - 1, size, mtime)
+        path_blob += enc
+    slots = _ampr_build_slots(rows)
+    path_end = hdr_s.size + len(records) + len(path_blob)
+    hash_off = (path_end + (hsl_s.size - 1)) & ~(hsl_s.size - 1)
+    with tmp.open("wb") as f:
+        f.write(hdr_s.pack(b"AMPRIDX3", 3, rec_s.size, len(rows),
+                            len(path_blob), hash_off, hsl_s.size, len(slots)))
+        f.write(records); f.write(path_blob); f.write(b"\x00" * (hash_off - path_end))
+        for h, ip1, fl in slots: f.write(hsl_s.pack(h, ip1, fl))
+    tmp.replace(output)
+
+def build_ampr_index(root_str: str, log_fn=None) -> bool:
+    from pathlib import Path
+    root = Path(root_str).resolve()
+    if not root.is_dir(): return False
+    output = root / "ampr_emu.index"
+    output_tmp = output.with_suffix(output.suffix + ".tmp")
+    seen: dict = {}; rows: list = []
+    for dirpath, dirnames, filenames in os.walk(root):
+        dirnames.sort(key=str.lower); filenames.sort(key=str.lower)
+        for filename in filenames:
+            path = Path(dirpath) / filename
+            try: resolved = path.resolve()
+            except OSError: continue
+            if resolved == output or resolved == output_tmp: continue
+            indexed = "/app0/" + path.relative_to(root).as_posix()
+            key = _ampr_key(indexed)
+            if "\t" in indexed or "\n" in indexed or key in seen: continue
+            try:
+                st = path.stat()
+                if not path.is_file(): continue
+            except OSError: continue
+            seen[key] = indexed
+            rows.append((st.st_size, int(st.st_mtime), indexed))
+    _ampr_write_index(rows, str(output))
+    if log_fn: log_fn(f"[AMPR] Index gerado: {len(rows)} arquivos → {output}\n")
+    return True
 
 # ── SFO / param.json parsers ──────────────────────────────
 def _parse_sfo(path: str) -> dict:
@@ -134,6 +223,7 @@ class App(ctk.CTk):
         self._t5_deep          = ctk.BooleanVar(value=True)
         self._t5_overwrite     = ctk.BooleanVar(value=True)
         self._t5_extract_exfat = ctk.BooleanVar(value=False)
+        self._ampr_index       = ctk.BooleanVar(value=False)
 
         self._build_ui()
 
@@ -463,6 +553,11 @@ class App(ctk.CTk):
         self._comp_menu.set(_lvl_map.get(self._comp_level.get(), "9 — Máxima"))
         self._comp_menu.pack(fill="x", padx=16, pady=(0, 12))
 
+        # AMPR index
+        sep = ctk.CTkFrame(card, fg_color="#252535", height=1)
+        sep.pack(fill="x", padx=16, pady=(4, 10))
+        ctk.CTkCheckBox(card, text="Gerar index do AMPR", variable=self._ampr_index).pack(anchor="w", padx=16, pady=(0, 12))
+
     def _refresh_sec3(self):
         fmt = self._fmt_var.get()
         mode = self._src_mode.get()
@@ -765,7 +860,7 @@ class App(ctk.CTk):
         if not out_name:
             self._log_append(self._build_log, "[ERRO] Informe o nome do arquivo de saída.\n", clear=True); return
 
-        self._build_btn.configure(state="disabled", text="Convertendo...")
+        self._build_btn.configure(fg_color="#dc2626", hover_color="#b91c1c", text="⬛  Stop", command=self._build_stop)
         self._build_bar.set(0)
         self._build_phase.configure(text="")
         self._log_clear(self._build_log)
@@ -852,6 +947,13 @@ class App(ctk.CTk):
                     except: pass
         finally:
             shutil.rmtree(staging, ignore_errors=True)
+
+        if success and self._ampr_index.get():
+            self.after(0, lambda: self._build_phase.configure(text="Gerando AMPR index...", text_color="white"))
+            try:
+                build_ampr_index(folder, log_fn=lambda msg: self.after(0, lambda m=msg: self._log_append(self._build_log, m)))
+            except Exception as e:
+                self.after(0, lambda: self._log_append(self._build_log, f"[AMPR ERRO] {e}\n"))
 
         self._finish(self._build_phase, self._build_btn, self._build_start_time, success, "▶  Build")
 
@@ -1103,12 +1205,22 @@ class App(ctk.CTk):
     # ────────────────────────────────────────────────────────
     #  Helpers
     # ────────────────────────────────────────────────────────
+    def _build_stop(self):
+        if self._active_proc and self._active_proc.poll() is None:
+            self._active_proc.terminate()
+            try: self._active_proc.wait(timeout=3)
+            except: self._active_proc.kill()
+        self._log_append(self._build_log, "[INFO] Cancelado pelo usuário.\n")
+        self._build_phase.configure(text="✗ Cancelado", text_color="#f87171")
+        self._build_bar.set(0)
+        self._build_btn.configure(fg_color="#0d9488", hover_color="#0a7b72", text="▶  Build", command=self._build_start)
+
     def _finish(self, phase_label, btn, start_time, success, btn_label="Converter"):
         elapsed = self._fmt_elapsed(time.time() - start_time)
         text  = f"✓ Concluído em {elapsed}" if success else f"✗ Falhou após {elapsed}"
         color = "#a3e635" if success else "#f87171"
         self.after(0, lambda: phase_label.configure(text=text, text_color=color))
-        self.after(0, lambda: btn.configure(state="normal", text=btn_label))
+        self.after(0, lambda: btn.configure(fg_color="#0d9488", hover_color="#0a7b72", text=btn_label, command=self._build_start))
 
     def _log_append(self, widget, text, clear=False):
         widget.configure(state="normal")
