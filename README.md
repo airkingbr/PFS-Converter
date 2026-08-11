@@ -183,6 +183,10 @@ python -m PyInstaller --noconfirm --onefile --noconsole --uac-admin \
 
 ## Histórico de versões
 
+### v1.3.0
+- Botão **Build** vira **⬛ Stop** durante a conversão — cancela o processo imediatamente
+- Nova opção em Advanced Options: **Gerar index do AMPR** — ao concluir a conversão, gera `ampr_emu.index` na raiz da pasta do dump (mesmo algoritmo do AMPR Index Builder)
+
 ### v1.2.2
 - Extração de ffpfsc em dois passos automáticos:
   - Intermediário `.dat` (PFS Raw): segunda extração automática para pasta dump
