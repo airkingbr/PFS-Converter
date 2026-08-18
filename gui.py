@@ -9,9 +9,11 @@ import time
 import shutil
 import struct
 import string
+import hashlib
 import multiprocessing
 from tkinter import filedialog
 from PIL import Image
+from ampr_sprx_data import AMPR_SPRX_BUNDLES
 
 # ── Bundle paths ──────────────────────────────────────────
 if getattr(sys, "frozen", False):
@@ -127,6 +129,8 @@ def build_ampr_index(root_str: str, log_fn=None) -> bool:
     root = Path(root_str).resolve()
     if not root.is_dir(): return False
     output = root / "ampr_emu.index"
+    if output.exists():
+        output.unlink()
     output_tmp = output.with_suffix(output.suffix + ".tmp")
     seen: dict = {}; rows: list = []
     for dirpath, dirnames, filenames in os.walk(root):
@@ -148,6 +152,28 @@ def build_ampr_index(root_str: str, log_fn=None) -> bool:
     _ampr_write_index(rows, str(output))
     if log_fn: log_fn(f"[AMPR] Index gerado: {len(rows)} arquivos → {output}\n")
     return True
+
+AMPR_SPRX_PATH = os.path.join("fakelib", "libSceAmpr.sprx")
+# Build hash→version lookup directly from the bundled binaries
+AMPR_SPRX_VERSIONS = {
+    hashlib.sha256(data).hexdigest().upper(): ver
+    for ver, data in AMPR_SPRX_BUNDLES.items()
+}
+
+def _detect_ampr_version(folder: str):
+    """Returns version string if libSceAmpr.sprx found, else None."""
+    sprx = os.path.join(folder, AMPR_SPRX_PATH)
+    if not os.path.isfile(sprx):
+        return None
+    try:
+        digest = hashlib.sha256()
+        with open(sprx, "rb") as f:
+            while chunk := f.read(1024 * 1024):
+                digest.update(chunk)
+        h = digest.hexdigest().upper()
+        return AMPR_SPRX_VERSIONS.get(h, f"desconhecida ({h[:12]}…)")
+    except OSError:
+        return None
 
 # ── SFO / param.json parsers ──────────────────────────────
 def _parse_sfo(path: str) -> dict:
@@ -189,17 +215,18 @@ _CARD_NORM = {"border_color": "#2a2a3a", "fg_color": "#111120", "border_width": 
 class App(ctk.CTk):
     def __init__(self):
         super().__init__()
+        cfg = _load_config()
         self.title(f"PFS Converter v{VERSION}")
-        self.geometry("1280x860")
+        self.geometry(cfg.get("window_geometry", "1280x860"))
         self.minsize(960, 680)
         self.resizable(True, True)
         if os.path.isfile(_ICON_PATH): self.iconbitmap(_ICON_PATH)
+        self.bind("<Configure>", self._on_resize)
 
         self._cpu_count  = multiprocessing.cpu_count()
         self._active_proc = None
         self.protocol("WM_DELETE_WINDOW", self._on_close)
 
-        cfg = _load_config()
         self._saved_cpus = int(cfg.get("cpu_count", self._cpu_count))
 
         # Build state
@@ -224,6 +251,16 @@ class App(ctk.CTk):
         self._t5_overwrite     = ctk.BooleanVar(value=True)
         self._t5_extract_exfat = ctk.BooleanVar(value=False)
         self._ampr_index       = ctk.BooleanVar(value=False)
+        self._ampr_detected    = None   # version string or None
+        self._ampr_ver_var     = ctk.StringVar()
+        self._backport_ext     = ctk.BooleanVar(value=False)
+
+        # Atualizar AMPR view state
+        self._ua_source        = ctk.StringVar()
+        self._ua_output        = ctk.StringVar()
+        self._ua_ver_var       = ctk.StringVar()
+        self._ua_regen_index   = ctk.BooleanVar(value=True)
+        self._ua_start_time    = 0
 
         self._build_ui()
 
@@ -251,6 +288,10 @@ class App(ctk.CTk):
                                           fg_color="#252535", hover_color="#353545",
                                           command=lambda: self._show_view("extra"))
         self._nav_extra.pack(side="left")
+        self._nav_ampr   = ctk.CTkButton(topbar, text="Atualizar AMPR no FFPFSC", width=190, height=32,
+                                          fg_color="#252535", hover_color="#353545",
+                                          command=lambda: self._show_view("ampr"))
+        self._nav_ampr.pack(side="left", padx=(4, 0))
 
         # Build button — far right of topbar
         self._build_btn = ctk.CTkButton(topbar, text="▶  Build", width=130, height=32,
@@ -262,21 +303,26 @@ class App(ctk.CTk):
         # Views
         self._view_build = ctk.CTkFrame(self, fg_color="transparent")
         self._view_extra = ctk.CTkFrame(self, fg_color="transparent")
+        self._view_ampr  = ctk.CTkFrame(self, fg_color="transparent")
         self._build_build_view(self._view_build)
         self._build_extra_view(self._view_extra)
+        self._build_ampr_view(self._view_ampr)
         self._show_view("build")
 
     def _show_view(self, v: str):
-        self._view_build.pack_forget()
-        self._view_extra.pack_forget()
+        for frame in (self._view_build, self._view_extra, self._view_ampr):
+            frame.pack_forget()
+        for btn in (self._nav_build, self._nav_extra, self._nav_ampr):
+            btn.configure(fg_color="#252535")
         if v == "build":
             self._view_build.pack(fill="both", expand=True)
             self._nav_build.configure(fg_color="#0d9488")
-            self._nav_extra.configure(fg_color="#252535")
-        else:
+        elif v == "extra":
             self._view_extra.pack(fill="both", expand=True)
-            self._nav_build.configure(fg_color="#252535")
             self._nav_extra.configure(fg_color="#0d9488")
+        else:
+            self._view_ampr.pack(fill="both", expand=True)
+            self._nav_ampr.configure(fg_color="#0d9488")
 
     # ────────────────────────────────────────────────────────
     #  Build view  (sections 1-4, two columns)
@@ -354,6 +400,10 @@ class App(ctk.CTk):
         self._stat_ver  = self._stat_box(stats, "VERSION",     "—")
         self._stat_size = self._stat_box(stats, "DUMP SIZE",   "—")
         self._stat_free = self._stat_box(stats, "OUTPUT FREE", "—")
+
+        self._ampr_lbl = ctk.CTkLabel(txt, text="", font=ctk.CTkFont(size=11),
+                                       text_color="#0d9488", anchor="w")
+        self._ampr_lbl.pack(fill="x", pady=(6, 0))
 
         # Status label
         self._src_status = ctk.CTkLabel(card, text="Selecione o dump abaixo",
@@ -553,10 +603,63 @@ class App(ctk.CTk):
         self._comp_menu.set(_lvl_map.get(self._comp_level.get(), "9 — Máxima"))
         self._comp_menu.pack(fill="x", padx=16, pady=(0, 12))
 
-        # AMPR index
-        sep = ctk.CTkFrame(card, fg_color="#252535", height=1)
-        sep.pack(fill="x", padx=16, pady=(4, 10))
-        ctk.CTkCheckBox(card, text="Gerar index do AMPR", variable=self._ampr_index).pack(anchor="w", padx=16, pady=(0, 12))
+        # AMPR block (shown only when AMPR is detected)
+        self._ampr_sep = ctk.CTkFrame(card, fg_color="#252535", height=1)
+        self._ampr_block = ctk.CTkFrame(card, fg_color="transparent")
+
+        ctk.CTkCheckBox(self._ampr_block, text="Backport externo (fakelib separada do .ffpfsc)",
+                        variable=self._backport_ext).pack(anchor="w", padx=16, pady=(0, 8))
+        ctk.CTkCheckBox(self._ampr_block, text="Gerar index do AMPR",
+                        variable=self._ampr_index).pack(anchor="w", padx=16, pady=(0, 8))
+
+        ver_row = ctk.CTkFrame(self._ampr_block, fg_color="transparent")
+        ver_row.pack(fill="x", padx=16, pady=(0, 12))
+        ver_list = sorted(AMPR_SPRX_BUNDLES.keys(),
+                          key=lambda v: [(int(x), "") if x.isdigit() else (0, x)
+                                         for x in v.replace("-", ".").split(".")])
+        self._ampr_ver_menu = ctk.CTkOptionMenu(ver_row, values=ver_list,
+                                                 variable=self._ampr_ver_var, width=140)
+        self._ampr_ver_menu.pack(side="left", padx=(0, 8))
+        ctk.CTkButton(ver_row, text="Aplicar versão", width=110, height=28,
+                      fg_color="#252535", hover_color="#353545",
+                      command=self._apply_ampr_version).pack(side="left")
+
+    def _refresh_ampr_ui(self):
+        ver = self._ampr_detected
+        if ver:
+            self._ampr_lbl.configure(text=f"AMPR: v{ver}")
+            self._ampr_sep.pack(fill="x", padx=16, pady=(4, 10))
+            self._ampr_block.pack(fill="x")
+            # Pre-select current version in dropdown if known
+            ver_list = self._ampr_ver_menu.cget("values")
+            if ver in ver_list:
+                self._ampr_ver_var.set(ver)
+            elif ver_list:
+                self._ampr_ver_var.set(ver_list[-1])
+        else:
+            self._ampr_lbl.configure(text="")
+            self._ampr_index.set(False)
+            self._ampr_sep.pack_forget()
+            self._ampr_block.pack_forget()
+
+    def _apply_ampr_version(self):
+        folder = self._src_folder.get().strip()
+        if not folder or not os.path.isdir(folder):
+            return
+        ver = self._ampr_ver_var.get()
+        data = AMPR_SPRX_BUNDLES.get(ver)
+        if not data:
+            return
+        dest_dir = os.path.join(folder, "fakelib")
+        dest = os.path.join(dest_dir, "libSceAmpr.sprx")
+        try:
+            os.makedirs(dest_dir, exist_ok=True)
+            with open(dest, "wb") as f:
+                f.write(data)
+            self._ampr_detected = ver
+            self._refresh_ampr_ui()
+        except Exception as e:
+            pass
 
     def _refresh_sec3(self):
         fmt = self._fmt_var.get()
@@ -666,6 +769,56 @@ class App(ctk.CTk):
         self._t5_log = ctk.CTkTextbox(card, font=ctk.CTkFont(family="Courier New", size=11), state="disabled")
         self._t5_log.pack(fill="both", expand=True, padx=16, pady=(4, 16))
 
+    # ── Atualizar AMPR view ────────────────────────────────
+    def _build_ampr_view(self, parent):
+        card = self._card(parent)
+        card.pack(fill="both", expand=True, padx=10, pady=10)
+        self._sec_hdr(card, "↺", "Atualizar AMPR em arquivo .ffpfsc")
+        ctk.CTkLabel(card, text="Substitui o libSceAmpr.sprx dentro do .ffpfsc e regera o index",
+                     font=ctk.CTkFont(size=11), text_color="gray", anchor="w").pack(fill="x", padx=24, pady=(0, 12))
+
+        # Source
+        ctk.CTkLabel(card, text="Arquivo de origem (.ffpfsc)", font=ctk.CTkFont(weight="bold"), anchor="w").pack(fill="x", padx=16)
+        r1 = ctk.CTkFrame(card, fg_color="transparent")
+        r1.pack(fill="x", padx=16, pady=(4, 10))
+        ctk.CTkEntry(r1, textvariable=self._ua_source, placeholder_text="Arquivo .ffpfsc...").pack(side="left", fill="x", expand=True, padx=(0, 8))
+        ctk.CTkButton(r1, text="Browse", width=90, command=self._ua_pick_src).pack(side="left")
+
+        # Output
+        ctk.CTkLabel(card, text="Arquivo de saída (.ffpfsc)", font=ctk.CTkFont(weight="bold"), anchor="w").pack(fill="x", padx=16)
+        r2 = ctk.CTkFrame(card, fg_color="transparent")
+        r2.pack(fill="x", padx=16, pady=(4, 10))
+        ctk.CTkEntry(r2, textvariable=self._ua_output, placeholder_text="Destino .ffpfsc...").pack(side="left", fill="x", expand=True, padx=(0, 8))
+        ctk.CTkButton(r2, text="Browse", width=90, command=self._ua_pick_out).pack(side="left")
+
+        # AMPR version
+        ctk.CTkLabel(card, text="Versão do AMPR", font=ctk.CTkFont(weight="bold"), anchor="w").pack(fill="x", padx=16)
+        ver_list = sorted(AMPR_SPRX_BUNDLES.keys(),
+                          key=lambda v: [(int(x), "") if x.isdigit() else (0, x)
+                                         for x in v.replace("-", ".").split(".")])
+        vm = ctk.CTkOptionMenu(card, values=ver_list, variable=self._ua_ver_var, width=160)
+        vm.pack(anchor="w", padx=16, pady=(4, 10))
+        if ver_list: self._ua_ver_var.set(ver_list[-1])
+
+        # Options
+        opt = ctk.CTkFrame(card, fg_color="transparent")
+        opt.pack(fill="x", padx=16, pady=(0, 10))
+        ctk.CTkCheckBox(opt, text="Regenerar AMPR index após substituição", variable=self._ua_regen_index).pack(side="left")
+
+        # Button + progress
+        self._ua_btn = ctk.CTkButton(card, text="▶  Atualizar", height=44,
+                                      fg_color="#0d9488", hover_color="#0a7b72",
+                                      font=ctk.CTkFont(size=14, weight="bold"), command=self._ua_start)
+        self._ua_btn.pack(fill="x", padx=16, pady=(4, 8))
+        self._ua_phase = ctk.CTkLabel(card, text="", anchor="w", font=ctk.CTkFont(size=12))
+        self._ua_phase.pack(fill="x", padx=16, pady=(0, 2))
+        self._ua_bar = ctk.CTkProgressBar(card, height=12, mode="indeterminate")
+        self._ua_bar.pack(fill="x", padx=16, pady=(0, 8))
+
+        ctk.CTkLabel(card, text="Log", anchor="w", text_color="gray", font=ctk.CTkFont(size=11)).pack(fill="x", padx=16)
+        self._ua_log = ctk.CTkTextbox(card, font=ctk.CTkFont(family="Courier New", size=11), state="disabled")
+        self._ua_log.pack(fill="both", expand=True, padx=16, pady=(4, 16))
+
     # ────────────────────────────────────────────────────────
     #  UI helpers
     # ────────────────────────────────────────────────────────
@@ -726,6 +879,8 @@ class App(ctk.CTk):
             self._stat_size.configure(text="—")
             self._info_icon_lbl.configure(image=None, text="")
             self._src_status.configure(text="Selecione o arquivo .exfat abaixo", text_color="gray")
+            self._ampr_detected = None
+            self._refresh_ampr_ui()
         self._refresh_sec3()
         self._update_out_name()
 
@@ -883,12 +1038,13 @@ class App(ctk.CTk):
             if fmt == "pfs_exfat" and not _find_osfmount():
                 self._log_append(self._build_log, "[ERRO] OSFMount não encontrado (necessário para PFS exFAT).\n", clear=True)
                 self._build_btn.configure(state="normal", text="▶  Build"); return
-            gen_ampr = self._ampr_index.get()
+            gen_ampr    = self._ampr_index.get()
+            backport    = self._backport_ext.get()
             threading.Thread(target=self._do_build,
-                             args=(folder, output, temp_dir, cpus, fmt, comp_eng, comp_lvl, gen_ampr),
+                             args=(folder, output, temp_dir, cpus, fmt, comp_eng, comp_lvl, gen_ampr, backport),
                              daemon=True).start()
 
-    def _do_build(self, folder, output, temp_dir, cpus, fmt, comp_eng, comp_lvl, gen_ampr=False):
+    def _do_build(self, folder, output, temp_dir, cpus, fmt, comp_eng, comp_lvl, gen_ampr=False, backport=False):
         name = os.path.basename(folder.rstrip("/\\"))
         staging = os.path.join(os.environ.get("TEMP", os.path.expanduser("~")), "_mkpfs_staging")
         os.makedirs(staging, exist_ok=True)
@@ -902,6 +1058,19 @@ class App(ctk.CTk):
                 cmd += ["--compression-level", comp_lvl]
             cmd += [src, dst]
             return cmd
+
+        # Backport externo: move fakelib out before index and packing
+        fakelib_src  = os.path.join(folder, "fakelib")
+        fakelib_dest = None
+        if backport and os.path.isdir(fakelib_src):
+            title_id = (self._game_info or {}).get("title_id") or name
+            out_dir  = os.path.dirname(output)
+            fakelib_dest = os.path.join(out_dir, title_id, "fakelib")
+            os.makedirs(os.path.dirname(fakelib_dest), exist_ok=True)
+            self.after(0, lambda: self._log_append(self._build_log,
+                f"[Backport] Movendo fakelib → {fakelib_dest}\n"))
+            shutil.copytree(fakelib_src, fakelib_dest, dirs_exist_ok=True)
+            shutil.rmtree(fakelib_src)
 
         if gen_ampr:
             self.after(0, lambda: self._build_phase.configure(text="Gerando AMPR index...", text_color="white"))
@@ -966,6 +1135,9 @@ class App(ctk.CTk):
                     except: pass
         finally:
             shutil.rmtree(staging, ignore_errors=True)
+            # Restore fakelib to dump folder
+            if fakelib_dest and os.path.isdir(fakelib_dest) and not os.path.isdir(fakelib_src):
+                shutil.copytree(fakelib_dest, fakelib_src)
 
         self._finish(self._build_phase, self._build_btn, self._build_start_time, success, "▶  Build")
 
@@ -1109,6 +1281,190 @@ class App(ctk.CTk):
         self._finish(self._t5_phase, self._t5_btn, self._t5_start_time, success, "Extrair")
 
     # ────────────────────────────────────────────────────────
+    #  Atualizar AMPR
+    # ────────────────────────────────────────────────────────
+    def _ua_pick_src(self):
+        current = self._ua_source.get()
+        path = filedialog.askopenfilename(
+            title="Selecione o arquivo .ffpfsc",
+            filetypes=[("PFS Compressed", "*.ffpfsc *.ffpfs"), ("All files", "*.*")],
+            initialdir=os.path.dirname(current) if current else None)
+        if path:
+            self._ua_source.set(path)
+            if not self._ua_output.get():
+                base, ext = os.path.splitext(path)
+                self._ua_output.set(base + "_ampr" + ext)
+
+    def _ua_pick_out(self):
+        current = self._ua_output.get()
+        path = filedialog.asksaveasfilename(
+            title="Salvar como",
+            defaultextension=".ffpfsc",
+            filetypes=[("PFS Compressed", "*.ffpfsc"), ("All files", "*.*")],
+            initialfile=os.path.basename(current) if current else "",
+            initialdir=os.path.dirname(current) if current else None)
+        if path:
+            self._ua_output.set(path)
+
+    def _ua_start(self):
+        source = self._ua_source.get().strip()
+        output = self._ua_output.get().strip()
+        ver    = self._ua_ver_var.get()
+        if not source or not os.path.isfile(source):
+            self._log_append(self._ua_log, "[ERRO] Selecione um arquivo .ffpfsc válido.\n", clear=True); return
+        if not output:
+            self._log_append(self._ua_log, "[ERRO] Informe o arquivo de saída.\n", clear=True); return
+        if not ver:
+            self._log_append(self._ua_log, "[ERRO] Selecione a versão do AMPR.\n", clear=True); return
+        regen = self._ua_regen_index.get()
+        cpus  = self._get_cpus()
+        comp_lvl = self._comp_level.get().split()[0]
+        comp_eng = self._comp_engine.get()
+        self._ua_btn.configure(fg_color="#dc2626", hover_color="#b91c1c", text="⬛  Stop",
+                               command=lambda: self._ua_stop())
+        self._ua_bar.start()
+        self._ua_phase.configure(text="Iniciando...", text_color="white")
+        self._log_clear(self._ua_log)
+        self._ua_start_time = time.time()
+        threading.Thread(target=self._ua_run,
+                         args=(source, output, ver, regen, cpus, comp_eng, comp_lvl),
+                         daemon=True).start()
+
+    def _ua_stop(self):
+        if self._active_proc and self._active_proc.poll() is None:
+            self._active_proc.terminate()
+            try: self._active_proc.wait(timeout=3)
+            except: self._active_proc.kill()
+        self._log_append(self._ua_log, "[INFO] Cancelado pelo usuário.\n")
+        self._ua_phase.configure(text="✗ Cancelado", text_color="#f87171")
+        self._ua_bar.stop(); self._ua_bar.set(0)
+        self._ua_btn.configure(fg_color="#0d9488", hover_color="#0a7b72",
+                               text="▶  Atualizar", command=self._ua_start)
+
+    def _ua_run(self, source, output, ver, regen, cpus, comp_eng, comp_lvl):
+        import tempfile, glob as _glob
+        success = False
+        stage1  = tempfile.mkdtemp(prefix="pfs_ua_s1_")
+        stage2  = tempfile.mkdtemp(prefix="pfs_ua_s2_")
+        staging = tempfile.mkdtemp(prefix="pfs_ua_pack_")
+        try:
+            env = os.environ.copy(); env["PYTHONUTF8"] = "1"; env["PYTHONIOENCODING"] = "utf-8"
+
+            # ── Step 1: unpack ffpfsc → stage1
+            self.after(0, lambda: self._ua_phase.configure(text="Passo 1/4 — descomprimindo .ffpfsc...", text_color="white"))
+            cmd = [_MKPFS, "unpack", "--no-progress", source, stage1]
+            proc = subprocess.Popen(cmd, stdout=subprocess.PIPE, stderr=subprocess.STDOUT,
+                                    text=True, encoding="utf-8", errors="replace",
+                                    creationflags=subprocess.CREATE_NO_WINDOW, env=env)
+            self._active_proc = proc
+            for line in proc.stdout:
+                s = line.rstrip("\n")
+                if s: self.after(0, lambda l=s: self._log_append(self._ua_log, l + "\n"))
+            proc.stdout.close(); proc.wait()
+            self._active_proc = None
+            if proc.returncode != 0:
+                self.after(0, lambda: self._log_append(self._ua_log, "[ERRO] Falha ao descomprimir.\n"))
+                return
+
+            # ── Detect intermediate type
+            dat_files   = _glob.glob(os.path.join(stage1, "*.dat"))
+            exfat_files = _glob.glob(os.path.join(stage1, "*.exfat"))
+
+            if dat_files:
+                # PFS Raw: unpack .dat → stage2 (game folder)
+                self.after(0, lambda: self._ua_phase.configure(text="Passo 2/4 — extraindo PFS Raw...", text_color="white"))
+                self.after(0, lambda: self._log_append(self._ua_log, f"[INFO] Tipo detectado: PFS Raw\n"))
+                cmd2 = [_MKPFS, "unpack", "--no-progress", "--overwrite", dat_files[0], stage2]
+                proc2 = subprocess.Popen(cmd2, stdout=subprocess.PIPE, stderr=subprocess.STDOUT,
+                                         text=True, encoding="utf-8", errors="replace",
+                                         creationflags=subprocess.CREATE_NO_WINDOW, env=env)
+                self._active_proc = proc2
+                for line in proc2.stdout:
+                    s = line.rstrip("\n")
+                    if s: self.after(0, lambda l=s: self._log_append(self._ua_log, l + "\n"))
+                proc2.stdout.close(); proc2.wait()
+                self._active_proc = None
+                if proc2.returncode != 0:
+                    self.after(0, lambda: self._log_append(self._ua_log, "[ERRO] Falha ao extrair .dat.\n"))
+                    return
+                game_folder = stage2
+
+            elif exfat_files:
+                # PFS exFAT: mount .exfat → copy files to stage2
+                self.after(0, lambda: self._ua_phase.configure(text="Passo 2/4 — extraindo exFAT...", text_color="white"))
+                self.after(0, lambda: self._log_append(self._ua_log, f"[INFO] Tipo detectado: PFS exFAT\n"))
+                cmd2 = [_MKPFS, "unpack", "--no-progress", "--overwrite", "--deep", exfat_files[0], stage2]
+                proc2 = subprocess.Popen(cmd2, stdout=subprocess.PIPE, stderr=subprocess.STDOUT,
+                                         text=True, encoding="utf-8", errors="replace",
+                                         creationflags=subprocess.CREATE_NO_WINDOW, env=env)
+                self._active_proc = proc2
+                for line in proc2.stdout:
+                    s = line.rstrip("\n")
+                    if s: self.after(0, lambda l=s: self._log_append(self._ua_log, l + "\n"))
+                proc2.stdout.close(); proc2.wait()
+                self._active_proc = None
+                if proc2.returncode != 0:
+                    self.after(0, lambda: self._log_append(self._ua_log, "[ERRO] Falha ao extrair .exfat.\n"))
+                    return
+                game_folder = stage2
+            else:
+                self.after(0, lambda: self._log_append(self._ua_log, "[ERRO] Tipo não reconhecido (nem .dat nem .exfat).\n"))
+                return
+
+            # ── Step 3: replace libSceAmpr.sprx
+            self.after(0, lambda: self._ua_phase.configure(text="Passo 3/4 — aplicando AMPR...", text_color="white"))
+            sprx_data = AMPR_SPRX_BUNDLES.get(ver)
+            if sprx_data:
+                fakelib = os.path.join(game_folder, "fakelib")
+                os.makedirs(fakelib, exist_ok=True)
+                with open(os.path.join(fakelib, "libSceAmpr.sprx"), "wb") as f:
+                    f.write(sprx_data)
+                self.after(0, lambda: self._log_append(self._ua_log, f"[INFO] AMPR v{ver} aplicado.\n"))
+
+            # ── Regen index
+            if regen:
+                old_idx = os.path.join(game_folder, "ampr_emu.index")
+                if os.path.exists(old_idx): os.remove(old_idx)
+                build_ampr_index(game_folder, log_fn=lambda m: self.after(0, lambda msg=m: self._log_append(self._ua_log, msg)))
+
+            # ── Step 4: repack → output ffpfsc
+            self.after(0, lambda: self._ua_phase.configure(text="Passo 4/4 — reempacotando...", text_color="white"))
+            dat_out = os.path.join(staging, "pfs_image.dat")
+            cmd3 = [_MKPFS, "pack", "folder", "--raw", "--no-compress",
+                    "--no-adjust-output-file-extension", "--version", "PS5",
+                    "--inode-bits", "32", "--cpu-count", str(cpus), game_folder, dat_out]
+            ok3 = self._run_cmd(cmd3, self._ua_bar, self._ua_phase, self._ua_log,
+                                "Passo 4a/4", success_file=dat_out)
+            if not ok3:
+                self.after(0, lambda: self._log_append(self._ua_log, "[ERRO] Falha ao criar pfs_image.dat.\n"))
+                return
+
+            if os.path.exists(output): os.remove(output)
+            cmd4 = [_MKPFS, "pack", "file", "--version", "PS5", "--inode-bits", "32",
+                    "--cpu-count", str(cpus), "--temp-folder", staging]
+            if comp_eng == "zlib-isa":
+                cmd4 += ["--compression-backend", "zlib-isa"]
+            if comp_lvl.isdigit():
+                cmd4 += ["--compression-level", comp_lvl]
+            cmd4 += [dat_out, output]
+            ok4 = self._run_cmd(cmd4, self._ua_bar, self._ua_phase, self._ua_log,
+                                "Passo 4b/4", success_file=output)
+            success = ok4
+
+        except Exception as e:
+            import traceback
+            tb = traceback.format_exc()
+            self.after(0, lambda m=tb: self._log_append(self._ua_log, f"[ERRO] {m}\n"))
+        finally:
+            shutil.rmtree(stage1, ignore_errors=True)
+            shutil.rmtree(stage2, ignore_errors=True)
+            shutil.rmtree(staging, ignore_errors=True)
+
+        self.after(0, self._ua_bar.stop)
+        self._finish(self._ua_phase, self._ua_btn, self._ua_start_time, success, "▶  Atualizar")
+        self.after(0, lambda: self._ua_btn.configure(command=self._ua_start))
+
+    # ────────────────────────────────────────────────────────
     #  Game info loading
     # ────────────────────────────────────────────────────────
     def _load_info(self, folder: str):
@@ -1153,6 +1509,8 @@ class App(ctk.CTk):
             self._stat_size.configure(text=size_str)
             self._src_status.configure(text="✓ Pronto para converter", text_color="#0d9488")
             self._update_out_name()
+            self._ampr_detected = _detect_ampr_version(folder)
+            self._refresh_ampr_ui()
 
         self.after(0, update)
 
@@ -1259,6 +1617,11 @@ class App(ctk.CTk):
         if h: return f"{h}h {m:02d}m {s:02d}s"
         if m: return f"{m}m {s:02d}s"
         return f"{s}s"
+
+    def _on_resize(self, event):
+        if event.widget is self:
+            geo = f"{self.winfo_width()}x{self.winfo_height()}"
+            _save_config({**_load_config(), "window_geometry": geo})
 
     def _on_close(self):
         if self._active_proc and self._active_proc.poll() is None:
