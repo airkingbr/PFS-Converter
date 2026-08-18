@@ -183,9 +183,13 @@ python -m PyInstaller --noconfirm --onefile --noconsole --uac-admin \
 
 ## Histórico de versões
 
-### v1.3.0
-- Botão **Build** vira **⬛ Stop** durante a conversão — cancela o processo imediatamente
-- Nova opção em Advanced Options: **Gerar index do AMPR** — ao concluir a conversão, gera `ampr_emu.index` na raiz da pasta do dump (mesmo algoritmo do AMPR Index Builder)
+### v1.4.0
+- **Detecção de AMPR**: ao carregar um dump, detecta automaticamente a versão do `libSceAmpr.sprx` e exibe na seção Source
+- **Troca de versão AMPR**: dropdown + botão "Aplicar versão" na seção Advanced Options (visível apenas quando AMPR detectado) — substitui o binário `fakelib/libSceAmpr.sprx` pela versão escolhida
+- **Gerar index do AMPR**: visível apenas quando AMPR detectado; apaga index antigo antes de gerar novo
+- **Backport externo**: move a `fakelib/` para pasta separada `<out_dir>/<TitleID>/fakelib/` antes de empacotar, mantendo-a fora do `.ffpfsc`; restaura o dump ao terminar
+- **Atualizar AMPR no FFPFSC**: nova aba — detecta automaticamente se o `.ffpfsc` é PFS Raw ou PFS exFAT, extrai, substitui o AMPR, regenera o index e reempacota
+- **Tamanho da janela**: salvo automaticamente e restaurado na próxima abertura
 
 ### v1.3.0
 - Botão **Build** vira **⬛ Stop** durante a conversão — cancela o processo imediatamente
