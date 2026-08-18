@@ -1620,8 +1620,13 @@ class App(ctk.CTk):
 
     def _on_resize(self, event):
         if event.widget is self:
-            geo = f"{self.winfo_width()}x{self.winfo_height()}"
-            _save_config({**_load_config(), "window_geometry": geo})
+            if hasattr(self, "_geo_save_after"):
+                self.after_cancel(self._geo_save_after)
+            self._geo_save_after = self.after(400, self._save_geometry)
+
+    def _save_geometry(self):
+        geo = self.geometry()  # returns "WxH+X+Y"
+        _save_config({**_load_config(), "window_geometry": geo})
 
     def _on_close(self):
         if self._active_proc and self._active_proc.poll() is None:
