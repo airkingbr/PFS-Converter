@@ -183,6 +183,9 @@ python -m PyInstaller --noconfirm --onefile --noconsole --uac-admin \
 
 ## Histórico de versões
 
+### v1.4.1
+- **Novas versões do AMPR**: adicionadas versões `0.3.5-test`, `0.3.5.1-test`, `0.3.6-test`, `0.3.6.1-test`, `0.3.6.2-test`, `0.3.6.4-test`, `0.3.6.5-test-1mb`, `0.3.6.5-test-2mb`, `0.3.6.5-test-512kb`
+
 ### v1.4.0
 - **Detecção de AMPR**: ao carregar um dump, detecta automaticamente a versão do `libSceAmpr.sprx` e exibe na seção Source
 - **Troca de versão AMPR**: dropdown + botão "Aplicar versão" na seção Advanced Options (visível apenas quando AMPR detectado) — substitui o binário `fakelib/libSceAmpr.sprx` pela versão escolhida
