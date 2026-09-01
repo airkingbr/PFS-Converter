@@ -639,6 +639,7 @@ class App(ctk.CTk):
         else:
             self._ampr_lbl.configure(text="")
             self._ampr_index.set(False)
+            self._backport_ext.set(False)
             self._ampr_sep.pack_forget()
             self._ampr_block.pack_forget()
 
