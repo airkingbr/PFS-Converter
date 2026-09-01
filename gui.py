@@ -1,4 +1,4 @@
-import customtkinter as ctk
+﻿import customtkinter as ctk
 import subprocess
 import threading
 import os
@@ -15,7 +15,7 @@ from tkinter import filedialog
 from PIL import Image
 from ampr_sprx_data import AMPR_SPRX_BUNDLES
 
-# ── Bundle paths ──────────────────────────────────────────
+# â”€â”€ Bundle paths â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 if getattr(sys, "frozen", False):
     _BUNDLE_DIR = sys._MEIPASS
 else:
@@ -47,7 +47,7 @@ _RE_PS1_STEP = re.compile(r"\[(\d+)/(\d+)\]")
 ctk.set_appearance_mode("dark")
 ctk.set_default_color_theme("blue")
 
-VERSION = "1.4.1"
+VERSION = "1.4.2"
 
 CONFIG_PATH = os.path.join(os.environ.get("APPDATA", os.path.expanduser("~")), "PFS Converter", "config.json")
 
@@ -62,7 +62,7 @@ def _save_config(data: dict):
         with open(CONFIG_PATH, "w", encoding="utf-8") as f: json.dump(data, f, indent=2, ensure_ascii=False)
     except: pass
 
-# ── AMPR index builder ───────────────────────────────────
+# â”€â”€ AMPR index builder â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 from dataclasses import dataclass, field as _field
 
 @dataclass
@@ -150,11 +150,11 @@ def build_ampr_index(root_str: str, log_fn=None) -> bool:
             seen[key] = indexed
             rows.append((st.st_size, int(st.st_mtime), indexed))
     _ampr_write_index(rows, str(output))
-    if log_fn: log_fn(f"[AMPR] Index gerado: {len(rows)} arquivos → {output}\n")
+    if log_fn: log_fn(f"[AMPR] Index gerado: {len(rows)} arquivos â†’ {output}\n")
     return True
 
 AMPR_SPRX_PATH = os.path.join("fakelib", "libSceAmpr.sprx")
-# Build hash→version lookup directly from the bundled binaries
+# Build hashâ†’version lookup directly from the bundled binaries
 AMPR_SPRX_VERSIONS = {
     hashlib.sha256(data).hexdigest().upper(): ver
     for ver, data in AMPR_SPRX_BUNDLES.items()
@@ -171,11 +171,11 @@ def _detect_ampr_version(folder: str):
             while chunk := f.read(1024 * 1024):
                 digest.update(chunk)
         h = digest.hexdigest().upper()
-        return AMPR_SPRX_VERSIONS.get(h, f"desconhecida ({h[:12]}…)")
+        return AMPR_SPRX_VERSIONS.get(h, f"desconhecida ({h[:12]}â€¦)")
     except OSError:
         return None
 
-# ── SFO / param.json parsers ──────────────────────────────
+# â”€â”€ SFO / param.json parsers â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 def _parse_sfo(path: str) -> dict:
     try:
         with open(path, "rb") as f: data = f.read()
@@ -194,7 +194,7 @@ def _parse_sfo(path: str) -> dict:
 def _parse_param_json(path: str) -> dict:
     try:
         with open(path, "r", encoding="utf-8") as f: data = json.load(f)
-        title = "—"
+        title = "â€”"
         loc = data.get("localizedParameters", {})
         for lang in [loc.get("defaultLanguage", ""), "en-US", "pt-BR"] + list(loc.keys()):
             entry = loc.get(lang, {})
@@ -202,12 +202,12 @@ def _parse_param_json(path: str) -> dict:
                 title = entry["titleName"]; break
         return {
             "TITLE":    title,
-            "TITLE_ID": data.get("titleId", "—"),
-            "APP_VER":  str(data.get("contentVersion", data.get("masterVersion", "—"))),
+            "TITLE_ID": data.get("titleId", "â€”"),
+            "APP_VER":  str(data.get("contentVersion", data.get("masterVersion", "â€”"))),
         }
     except: return {}
 
-# ── Card style constants ───────────────────────────────────
+# â”€â”€ Card style constants â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 _CARD_SEL  = {"border_color": "#0d9488", "fg_color": "#081c1a", "border_width": 2}
 _CARD_NORM = {"border_color": "#2a2a3a", "fg_color": "#111120", "border_width": 1}
 
@@ -267,15 +267,15 @@ class App(ctk.CTk):
         if not _find_osfmount():
             threading.Thread(target=self._auto_install_osfmount, daemon=True).start()
 
-    # ────────────────────────────────────────────────────────
+    # â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
     #  Top-level UI
-    # ────────────────────────────────────────────────────────
+    # â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
     def _build_ui(self):
         # Top bar
         topbar = ctk.CTkFrame(self, fg_color="#0a0a14", height=48, corner_radius=0)
         topbar.pack(fill="x")
         topbar.pack_propagate(False)
-        ctk.CTkLabel(topbar, text="🎮  PFS Converter",
+        ctk.CTkLabel(topbar, text="ðŸŽ®  PFS Converter",
                      font=ctk.CTkFont(size=16, weight="bold")).pack(side="left", padx=20)
         ctk.CTkLabel(topbar, text=f"v{VERSION}",
                      font=ctk.CTkFont(size=11), text_color="gray").pack(side="left")
@@ -293,8 +293,8 @@ class App(ctk.CTk):
                                           command=lambda: self._show_view("ampr"))
         self._nav_ampr.pack(side="left", padx=(4, 0))
 
-        # Build button — far right of topbar
-        self._build_btn = ctk.CTkButton(topbar, text="▶  Build", width=130, height=32,
+        # Build button â€” far right of topbar
+        self._build_btn = ctk.CTkButton(topbar, text="â–¶  Build", width=130, height=32,
                                          fg_color="#0d9488", hover_color="#0a7b72",
                                          font=ctk.CTkFont(size=13, weight="bold"),
                                          command=self._build_start)
@@ -324,9 +324,9 @@ class App(ctk.CTk):
             self._view_ampr.pack(fill="both", expand=True)
             self._nav_ampr.configure(fg_color="#0d9488")
 
-    # ────────────────────────────────────────────────────────
+    # â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
     #  Build view  (sections 1-4, two columns)
-    # ────────────────────────────────────────────────────────
+    # â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
     def _build_build_view(self, parent):
         parent.columnconfigure(0, weight=1)
         parent.columnconfigure(1, weight=1)
@@ -355,7 +355,7 @@ class App(ctk.CTk):
         self._build_sec4(bot_right)
         self._refresh_sec3()
 
-    # ── Section 1 — Source ─────────────────────────────────
+    # â”€â”€ Section 1 â€” Source â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
     def _build_sec1(self, parent):
         card = self._card(parent)
         card.pack(fill="both", expand=True)
@@ -365,12 +365,12 @@ class App(ctk.CTk):
         # Mode toggle
         tog = ctk.CTkFrame(card, fg_color="transparent")
         tog.pack(fill="x", padx=16, pady=(0, 10))
-        self._mode_btn_folder = ctk.CTkButton(tog, text="📁  Pasta do dump", width=160, height=28,
+        self._mode_btn_folder = ctk.CTkButton(tog, text="ðŸ“  Pasta do dump", width=160, height=28,
                                                fg_color="#0d9488", hover_color="#0a7b72",
                                                font=ctk.CTkFont(size=11),
                                                command=lambda: self._set_src_mode("folder"))
         self._mode_btn_folder.pack(side="left", padx=(0, 6))
-        self._mode_btn_exfat = ctk.CTkButton(tog, text="💿  Arquivo .exfat", width=160, height=28,
+        self._mode_btn_exfat = ctk.CTkButton(tog, text="ðŸ’¿  Arquivo .exfat", width=160, height=28,
                                               fg_color="#252535", hover_color="#353545",
                                               font=ctk.CTkFont(size=11),
                                               command=lambda: self._set_src_mode("exfat"))
@@ -397,9 +397,9 @@ class App(ctk.CTk):
 
         stats = ctk.CTkFrame(txt, fg_color="transparent")
         stats.pack(fill="x")
-        self._stat_ver  = self._stat_box(stats, "VERSION",     "—")
-        self._stat_size = self._stat_box(stats, "DUMP SIZE",   "—")
-        self._stat_free = self._stat_box(stats, "OUTPUT FREE", "—")
+        self._stat_ver  = self._stat_box(stats, "VERSION",     "â€”")
+        self._stat_size = self._stat_box(stats, "DUMP SIZE",   "â€”")
+        self._stat_free = self._stat_box(stats, "OUTPUT FREE", "â€”")
 
         self._ampr_lbl = ctk.CTkLabel(txt, text="", font=ctk.CTkFont(size=11),
                                        text_color="#0d9488", anchor="w")
@@ -435,14 +435,14 @@ class App(ctk.CTk):
         lbl.pack(padx=10, pady=(0, 5))
         return lbl
 
-    # ── Right card — Format + Output name + Progress ──────
+    # â”€â”€ Right card â€” Format + Output name + Progress â”€â”€â”€â”€â”€â”€
     def _build_right_card(self, parent):
         card = self._card(parent)
         card.pack(fill="both", expand=True, pady=(0, 8))
 
-        # ── Format ──────────────────────────────────────────
+        # â”€â”€ Format â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
         self._sec_hdr(card, "2", "Format & Output")
-        self._sec2_subtitle = ctk.CTkLabel(card, text="Selecione o formato de saída",
+        self._sec2_subtitle = ctk.CTkLabel(card, text="Selecione o formato de saÃ­da",
                      font=ctk.CTkFont(size=11), text_color="gray", anchor="w")
         self._sec2_subtitle.pack(fill="x", padx=24, pady=(0, 10))
 
@@ -453,9 +453,9 @@ class App(ctk.CTk):
 
         self._fmt_cards = {}
         formats = [
-            ("exfat",     "💾", "exFAT",    "Imagem montável\npara a maioria",  True),
-            ("pfs_raw",   "📦", "PFS Raw",  ".dat → .ffpfsc\ncomprimido",       False),
-            ("pfs_exfat", "🗜️", "PFS exFAT","Via exFAT → .ffpfsc\ncomprimido", False),
+            ("exfat",     "ðŸ’¾", "exFAT",    "Imagem montÃ¡vel\npara a maioria",  True),
+            ("pfs_raw",   "ðŸ“¦", "PFS Raw",  ".dat â†’ .ffpfsc\ncomprimido",       False),
+            ("pfs_exfat", "ðŸ—œï¸", "PFS exFAT","Via exFAT â†’ .ffpfsc\ncomprimido", False),
         ]
         for col, (key, icon, name, desc, rec) in enumerate(formats):
             sel = self._fmt_var.get() == key
@@ -464,7 +464,7 @@ class App(ctk.CTk):
             top = ctk.CTkFrame(fc, fg_color="transparent")
             top.pack(fill="x", padx=8, pady=(8, 0))
             ctk.CTkLabel(top, text=icon, font=ctk.CTkFont(size=16)).pack(side="left")
-            chk = ctk.CTkLabel(top, text="✓" if sel else "",
+            chk = ctk.CTkLabel(top, text="âœ“" if sel else "",
                                font=ctk.CTkFont(size=12), text_color="#0d9488")
             chk.pack(side="right")
             ctk.CTkLabel(fc, text=name, font=ctk.CTkFont(size=12, weight="bold"), anchor="w").pack(fill="x", padx=8, pady=(2, 0))
@@ -478,29 +478,29 @@ class App(ctk.CTk):
             self._bind_card_click(fc, key)
             self._fmt_cards[key] = (fc, chk)
 
-        # Single PFS card (exfat file mode) — hidden initially
+        # Single PFS card (exfat file mode) â€” hidden initially
         self._cards_exfat_row = ctk.CTkFrame(card, fg_color="transparent")
         self._cards_exfat_row.columnconfigure(0, weight=1)
         fc_pfs = ctk.CTkFrame(self._cards_exfat_row, corner_radius=8, **_CARD_SEL)
         fc_pfs.grid(row=0, column=0, padx=5, sticky="new", pady=(0, 8))
         top_pfs = ctk.CTkFrame(fc_pfs, fg_color="transparent")
         top_pfs.pack(fill="x", padx=8, pady=(8, 0))
-        ctk.CTkLabel(top_pfs, text="🗜️", font=ctk.CTkFont(size=16)).pack(side="left")
-        ctk.CTkLabel(top_pfs, text="✓", font=ctk.CTkFont(size=12), text_color="#0d9488").pack(side="right")
+        ctk.CTkLabel(top_pfs, text="ðŸ—œï¸", font=ctk.CTkFont(size=16)).pack(side="left")
+        ctk.CTkLabel(top_pfs, text="âœ“", font=ctk.CTkFont(size=12), text_color="#0d9488").pack(side="right")
         ctk.CTkLabel(fc_pfs, text="PFS", font=ctk.CTkFont(size=12, weight="bold"), anchor="w").pack(fill="x", padx=8, pady=(2, 0))
-        ctk.CTkLabel(fc_pfs, text=".exfat → .ffpfsc comprimido", font=ctk.CTkFont(size=9),
+        ctk.CTkLabel(fc_pfs, text=".exfat â†’ .ffpfsc comprimido", font=ctk.CTkFont(size=9),
                      text_color="gray", anchor="w").pack(fill="x", padx=8, pady=(1, 8))
 
-        # ── Divider ─────────────────────────────────────────
+        # â”€â”€ Divider â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
         ctk.CTkFrame(card, fg_color="#252535", height=1).pack(fill="x", padx=16, pady=(0, 12))
 
-        # ── Output name ─────────────────────────────────────
+        # â”€â”€ Output name â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
         ctk.CTkLabel(card, text="OUTPUT NAME PRESET",
                      font=ctk.CTkFont(size=10, weight="bold"), text_color="gray", anchor="w").pack(fill="x", padx=16, pady=(0, 6))
         pf = ctk.CTkFrame(card, fg_color="transparent")
         pf.pack(fill="x", padx=16, pady=(0, 8))
-        for val, lbl in [("id", "Title ID"), ("id_title", "+ Título"),
-                         ("id_title_ver", "+ Versão"), ("custom", "Personalizado")]:
+        for val, lbl in [("id", "Title ID"), ("id_title", "+ TÃ­tulo"),
+                         ("id_title_ver", "+ VersÃ£o"), ("custom", "Personalizado")]:
             ctk.CTkRadioButton(pf, text=lbl, variable=self._name_preset, value=val,
                                radiobutton_width=14, radiobutton_height=14,
                                command=self._update_out_name).pack(side="left", padx=(0, 12))
@@ -510,15 +510,15 @@ class App(ctk.CTk):
         ctk.CTkEntry(card, textvariable=self._output_name,
                      placeholder_text="nome_do_arquivo.ffpfsc").pack(fill="x", padx=16, pady=(4, 12))
 
-        # ── Divider ─────────────────────────────────────────
+        # â”€â”€ Divider â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
         ctk.CTkFrame(card, fg_color="#252535", height=1).pack(fill="x", padx=16, pady=(0, 10))
 
-        # ── Progress ─────────────────────────────────────────
+        # â”€â”€ Progress â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
         prow = ctk.CTkFrame(card, fg_color="transparent")
         prow.pack(fill="x", padx=16, pady=(0, 6))
         self._build_phase = ctk.CTkLabel(prow, text="Pronto", anchor="w", font=ctk.CTkFont(size=12))
         self._build_phase.pack(side="left", fill="x", expand=True)
-        ctk.CTkButton(prow, text="📋 Log", width=76, height=26,
+        ctk.CTkButton(prow, text="ðŸ“‹ Log", width=76, height=26,
                       fg_color="#252535", hover_color="#353545",
                       font=ctk.CTkFont(size=11),
                       command=self._open_log_window).pack(side="right")
@@ -533,7 +533,7 @@ class App(ctk.CTk):
         self._log_window = None
         self._log_view   = None
 
-    # ── Section 3 — Configure output ───────────────────────
+    # â”€â”€ Section 3 â€” Configure output â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
     def _build_sec3(self, parent):
         card = self._card(parent)
         card.pack(fill="both", expand=True)
@@ -541,25 +541,25 @@ class App(ctk.CTk):
         self._sec_hdr(card, "3", "Configure output")
 
         ctk.CTkLabel(card, text="Output folder", font=ctk.CTkFont(weight="bold"), anchor="w").pack(fill="x", padx=16)
-        ctk.CTkLabel(card, text="onde a imagem será gravada",
+        ctk.CTkLabel(card, text="onde a imagem serÃ¡ gravada",
                      font=ctk.CTkFont(size=10), text_color="gray", anchor="w").pack(fill="x", padx=16)
         r1 = ctk.CTkFrame(card, fg_color="transparent")
         r1.pack(fill="x", padx=16, pady=(4, 12))
         ctk.CTkEntry(r1, textvariable=self._out_folder,
-                     placeholder_text="Pasta de saída...").pack(side="left", fill="x", expand=True, padx=(0, 8))
+                     placeholder_text="Pasta de saÃ­da...").pack(side="left", fill="x", expand=True, padx=(0, 8))
         ctk.CTkButton(r1, text="Browse", width=90, command=self._pick_out).pack(side="left")
 
         self._temp_wrap = ctk.CTkFrame(card, fg_color="transparent")
         ctk.CTkLabel(self._temp_wrap, text="Temp folder", font=ctk.CTkFont(weight="bold"), anchor="w").pack(fill="x")
-        ctk.CTkLabel(self._temp_wrap, text="redirect do build spool — PFS Raw e PFS exFAT",
+        ctk.CTkLabel(self._temp_wrap, text="redirect do build spool â€” PFS Raw e PFS exFAT",
                      font=ctk.CTkFont(size=10), text_color="gray", anchor="w").pack(fill="x")
         r2 = ctk.CTkFrame(self._temp_wrap, fg_color="transparent")
         r2.pack(fill="x", pady=(4, 0))
         ctk.CTkEntry(r2, textvariable=self._temp_folder,
-                     placeholder_text="Pasta temporária...").pack(side="left", fill="x", expand=True, padx=(0, 8))
+                     placeholder_text="Pasta temporÃ¡ria...").pack(side="left", fill="x", expand=True, padx=(0, 8))
         ctk.CTkButton(r2, text="Browse", width=90, command=self._pick_temp).pack(side="left")
 
-    # ── Section 4 — Advanced options (always visible) ──────
+    # â”€â”€ Section 4 â€” Advanced options (always visible) â”€â”€â”€â”€â”€â”€
     def _build_sec4(self, parent):
         card = self._card(parent)
         card.pack(fill="both", expand=True)
@@ -568,7 +568,7 @@ class App(ctk.CTk):
 
         # CPU
         ctk.CTkLabel(card, text="CPU threads", font=ctk.CTkFont(weight="bold"), anchor="w").pack(fill="x", padx=16)
-        ctk.CTkLabel(card, text="paralelo durante criação da imagem",
+        ctk.CTkLabel(card, text="paralelo durante criaÃ§Ã£o da imagem",
                      font=ctk.CTkFont(size=10), text_color="gray", anchor="w").pack(fill="x", padx=16)
         cpu_row = ctk.CTkFrame(card, fg_color="transparent")
         cpu_row.pack(fill="x", padx=16, pady=(6, 12))
@@ -587,20 +587,20 @@ class App(ctk.CTk):
 
         ctk.CTkLabel(self._comp_wrap, text="Compression engine",
                      font=ctk.CTkFont(weight="bold"), anchor="w").pack(fill="x", padx=16)
-        for val, lbl in [("zlib", "zlib — safe (padrão)"), ("zlib-isa", "zlib-isa — experimental")]:
+        for val, lbl in [("zlib", "zlib â€” safe (padrÃ£o)"), ("zlib-isa", "zlib-isa â€” experimental")]:
             ctk.CTkRadioButton(self._comp_wrap, text=lbl, variable=self._comp_engine,
                                value=val, radiobutton_width=16, radiobutton_height=16
                                ).pack(anchor="w", padx=28, pady=2)
 
         ctk.CTkLabel(self._comp_wrap, text="Compression level",
                      font=ctk.CTkFont(weight="bold"), anchor="w").pack(fill="x", padx=16, pady=(10, 4))
-        _lvl_map = {"1": "1 — Mínima", "3": "3 — Média", "6": "6 — Alta", "9": "9 — Máxima"}
+        _lvl_map = {"1": "1 â€” MÃ­nima", "3": "3 â€” MÃ©dia", "6": "6 â€” Alta", "9": "9 â€” MÃ¡xima"}
         self._comp_menu = ctk.CTkOptionMenu(
             self._comp_wrap,
             values=list(_lvl_map.values()),
             command=lambda v: self._comp_level.set(v[0])
         )
-        self._comp_menu.set(_lvl_map.get(self._comp_level.get(), "9 — Máxima"))
+        self._comp_menu.set(_lvl_map.get(self._comp_level.get(), "9 â€” MÃ¡xima"))
         self._comp_menu.pack(fill="x", padx=16, pady=(0, 12))
 
         # AMPR block (shown only when AMPR is detected)
@@ -620,7 +620,7 @@ class App(ctk.CTk):
         self._ampr_ver_menu = ctk.CTkOptionMenu(ver_row, values=ver_list,
                                                  variable=self._ampr_ver_var, width=140)
         self._ampr_ver_menu.pack(side="left", padx=(0, 8))
-        ctk.CTkButton(ver_row, text="Aplicar versão", width=110, height=28,
+        ctk.CTkButton(ver_row, text="Aplicar versÃ£o", width=110, height=28,
                       fg_color="#252535", hover_color="#353545",
                       command=self._apply_ampr_version).pack(side="left")
 
@@ -680,7 +680,7 @@ class App(ctk.CTk):
         if self._log_window and self._log_window.winfo_exists():
             self._log_window.lift(); self._log_window.focus(); return
         win = ctk.CTkToplevel(self)
-        win.title("Log de conversão")
+        win.title("Log de conversÃ£o")
         win.resizable(True, True)
         self._log_window = win
 
@@ -695,7 +695,7 @@ class App(ctk.CTk):
 
         bar = ctk.CTkFrame(win, fg_color="transparent")
         bar.pack(fill="x", padx=12, pady=(10, 4))
-        ctk.CTkLabel(bar, text="Log de conversão", font=ctk.CTkFont(size=13, weight="bold")).pack(side="left")
+        ctk.CTkLabel(bar, text="Log de conversÃ£o", font=ctk.CTkFont(size=13, weight="bold")).pack(side="left")
         ctk.CTkButton(bar, text="Limpar", width=70, height=26,
                       fg_color="#252535", hover_color="#353545",
                       command=self._clear_both_logs).pack(side="right")
@@ -723,12 +723,12 @@ class App(ctk.CTk):
             self._log_view.delete("1.0", "end")
             self._log_view.configure(state="disabled")
 
-    # ── Extrair view ───────────────────────────────────────
+    # â”€â”€ Extrair view â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
     def _build_extra_view(self, parent):
         card = self._card(parent)
         card.pack(fill="both", expand=True, padx=10, pady=10)
-        self._sec_hdr(card, "↓", "Extrair arquivos de imagem PFS")
-        ctk.CTkLabel(card, text="Extração a partir de .ffpfsc, .ffpfs ou .exfat",
+        self._sec_hdr(card, "â†“", "Extrair arquivos de imagem PFS")
+        ctk.CTkLabel(card, text="ExtraÃ§Ã£o a partir de .ffpfsc, .ffpfs ou .exfat",
                      font=ctk.CTkFont(size=11), text_color="gray", anchor="w").pack(fill="x", padx=24, pady=(0, 12))
 
         ctk.CTkLabel(card, text="Arquivo de origem", font=ctk.CTkFont(weight="bold"), anchor="w").pack(fill="x", padx=16)
@@ -738,7 +738,7 @@ class App(ctk.CTk):
                      placeholder_text="Arquivo de imagem...").pack(side="left", fill="x", expand=True, padx=(0, 8))
         ctk.CTkButton(r1, text="Browse", width=90, command=self._t5_pick_src).pack(side="left")
 
-        ctk.CTkLabel(card, text="Pasta de saída", font=ctk.CTkFont(weight="bold"), anchor="w").pack(fill="x", padx=16)
+        ctk.CTkLabel(card, text="Pasta de saÃ­da", font=ctk.CTkFont(weight="bold"), anchor="w").pack(fill="x", padx=16)
         r2 = ctk.CTkFrame(card, fg_color="transparent")
         r2.pack(fill="x", padx=16, pady=(4, 10))
         ctk.CTkEntry(r2, textvariable=self._t5_output_folder,
@@ -752,7 +752,7 @@ class App(ctk.CTk):
 
         opt2 = ctk.CTkFrame(card, fg_color="transparent")
         opt2.pack(fill="x", padx=16, pady=(0, 10))
-        ctk.CTkCheckBox(opt2, text="Extrair exFAT → pasta dump (se ffpfsc contiver exFAT)", variable=self._t5_extract_exfat).pack(side="left")
+        ctk.CTkCheckBox(opt2, text="Extrair exFAT â†’ pasta dump (se ffpfsc contiver exFAT)", variable=self._t5_extract_exfat).pack(side="left")
 
         self._t5_btn = ctk.CTkButton(card, text="Extrair", height=44,
                                       fg_color="#0d9488", hover_color="#0a7b72",
@@ -769,11 +769,11 @@ class App(ctk.CTk):
         self._t5_log = ctk.CTkTextbox(card, font=ctk.CTkFont(family="Courier New", size=11), state="disabled")
         self._t5_log.pack(fill="both", expand=True, padx=16, pady=(4, 16))
 
-    # ── Atualizar AMPR view ────────────────────────────────
+    # â”€â”€ Atualizar AMPR view â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
     def _build_ampr_view(self, parent):
         card = self._card(parent)
         card.pack(fill="both", expand=True, padx=10, pady=10)
-        self._sec_hdr(card, "↺", "Atualizar AMPR em arquivo .ffpfsc")
+        self._sec_hdr(card, "â†º", "Atualizar AMPR em arquivo .ffpfsc")
         ctk.CTkLabel(card, text="Substitui o libSceAmpr.sprx dentro do .ffpfsc e regera o index",
                      font=ctk.CTkFont(size=11), text_color="gray", anchor="w").pack(fill="x", padx=24, pady=(0, 12))
 
@@ -785,14 +785,14 @@ class App(ctk.CTk):
         ctk.CTkButton(r1, text="Browse", width=90, command=self._ua_pick_src).pack(side="left")
 
         # Output
-        ctk.CTkLabel(card, text="Arquivo de saída (.ffpfsc)", font=ctk.CTkFont(weight="bold"), anchor="w").pack(fill="x", padx=16)
+        ctk.CTkLabel(card, text="Arquivo de saÃ­da (.ffpfsc)", font=ctk.CTkFont(weight="bold"), anchor="w").pack(fill="x", padx=16)
         r2 = ctk.CTkFrame(card, fg_color="transparent")
         r2.pack(fill="x", padx=16, pady=(4, 10))
         ctk.CTkEntry(r2, textvariable=self._ua_output, placeholder_text="Destino .ffpfsc...").pack(side="left", fill="x", expand=True, padx=(0, 8))
         ctk.CTkButton(r2, text="Browse", width=90, command=self._ua_pick_out).pack(side="left")
 
         # AMPR version
-        ctk.CTkLabel(card, text="Versão do AMPR", font=ctk.CTkFont(weight="bold"), anchor="w").pack(fill="x", padx=16)
+        ctk.CTkLabel(card, text="VersÃ£o do AMPR", font=ctk.CTkFont(weight="bold"), anchor="w").pack(fill="x", padx=16)
         ver_list = sorted(AMPR_SPRX_BUNDLES.keys(),
                           key=lambda v: [(int(x), "") if x.isdigit() else (0, x)
                                          for x in v.replace("-", ".").split(".")])
@@ -803,10 +803,10 @@ class App(ctk.CTk):
         # Options
         opt = ctk.CTkFrame(card, fg_color="transparent")
         opt.pack(fill="x", padx=16, pady=(0, 10))
-        ctk.CTkCheckBox(opt, text="Regenerar AMPR index após substituição", variable=self._ua_regen_index).pack(side="left")
+        ctk.CTkCheckBox(opt, text="Regenerar AMPR index apÃ³s substituiÃ§Ã£o", variable=self._ua_regen_index).pack(side="left")
 
         # Button + progress
-        self._ua_btn = ctk.CTkButton(card, text="▶  Atualizar", height=44,
+        self._ua_btn = ctk.CTkButton(card, text="â–¶  Atualizar", height=44,
                                       fg_color="#0d9488", hover_color="#0a7b72",
                                       font=ctk.CTkFont(size=14, weight="bold"), command=self._ua_start)
         self._ua_btn.pack(fill="x", padx=16, pady=(4, 8))
@@ -819,9 +819,9 @@ class App(ctk.CTk):
         self._ua_log = ctk.CTkTextbox(card, font=ctk.CTkFont(family="Courier New", size=11), state="disabled")
         self._ua_log.pack(fill="both", expand=True, padx=16, pady=(4, 16))
 
-    # ────────────────────────────────────────────────────────
+    # â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
     #  UI helpers
-    # ────────────────────────────────────────────────────────
+    # â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
     def _bind_card_click(self, widget, key: str):
         """Recursively bind left-click on every child of a format card."""
         widget.bind("<Button-1>", lambda e, k=key: self._select_fmt(k))
@@ -839,22 +839,22 @@ class App(ctk.CTk):
                      fg_color="#1d3557", font=ctk.CTkFont(size=11, weight="bold")).pack(side="left", padx=(0, 8))
         ctk.CTkLabel(f, text=title, font=ctk.CTkFont(size=14, weight="bold"), anchor="w").pack(side="left")
 
-    # ────────────────────────────────────────────────────────
+    # â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
     #  Format selection
-    # ────────────────────────────────────────────────────────
+    # â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
     def _select_fmt(self, key: str):
         self._fmt_var.set(key)
         for k, (fc, chk) in self._fmt_cards.items():
             sel = k == key
             fc.configure(**(_CARD_SEL if sel else _CARD_NORM))
-            chk.configure(text="✓" if sel else "")
+            chk.configure(text="âœ“" if sel else "")
         self._refresh_sec3()
         self._update_out_name()
         _save_config({**_load_config(), "fmt": key})
 
-    # ────────────────────────────────────────────────────────
+    # â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
     #  Source mode toggle
-    # ────────────────────────────────────────────────────────
+    # â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
     def _set_src_mode(self, mode: str):
         self._src_mode.set(mode)
         if mode == "folder":
@@ -864,7 +864,7 @@ class App(ctk.CTk):
             self._src_folder_row.pack(fill="x", padx=16, pady=(0, 14))
             self._cards_normal_row.pack(fill="x", padx=16, pady=(0, 16))
             self._cards_exfat_row.pack_forget()
-            self._sec2_subtitle.configure(text="Selecione o formato e configure as opções abaixo")
+            self._sec2_subtitle.configure(text="Selecione o formato e configure as opÃ§Ãµes abaixo")
         else:
             self._mode_btn_exfat.configure(fg_color="#0d9488")
             self._mode_btn_folder.configure(fg_color="#252535")
@@ -872,11 +872,11 @@ class App(ctk.CTk):
             self._src_exfat_row.pack(fill="x", padx=16, pady=(0, 14))
             self._cards_normal_row.pack_forget()
             self._cards_exfat_row.pack(fill="x", padx=16)
-            self._sec2_subtitle.configure(text="Formato fixo: .exfat → .ffpfsc comprimido")
+            self._sec2_subtitle.configure(text="Formato fixo: .exfat â†’ .ffpfsc comprimido")
             self._info_title_lbl.configure(text="Selecione um arquivo .exfat")
             self._info_tid_lbl.configure(text="")
-            self._stat_ver.configure(text="—")
-            self._stat_size.configure(text="—")
+            self._stat_ver.configure(text="â€”")
+            self._stat_size.configure(text="â€”")
             self._info_icon_lbl.configure(image=None, text="")
             self._src_status.configure(text="Selecione o arquivo .exfat abaixo", text_color="gray")
             self._ampr_detected = None
@@ -884,9 +884,9 @@ class App(ctk.CTk):
         self._refresh_sec3()
         self._update_out_name()
 
-    # ────────────────────────────────────────────────────────
+    # â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
     #  Pickers
-    # ────────────────────────────────────────────────────────
+    # â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
     def _pick_src(self):
         path = filedialog.askdirectory(title="Selecione o dump")
         if path:
@@ -911,12 +911,12 @@ class App(ctk.CTk):
         osf = _find_osfmount()
         if not osf:
             self.after(0, lambda: self._src_status.configure(
-                text="OSFMount não encontrado — sem prévia", text_color="#f87171"))
+                text="OSFMount nÃ£o encontrado â€” sem prÃ©via", text_color="#f87171"))
             return
         drive = self._find_free_drive()
         if not drive:
             self.after(0, lambda: self._src_status.configure(
-                text="Nenhuma letra de drive disponível", text_color="#f87171"))
+                text="Nenhuma letra de drive disponÃ­vel", text_color="#f87171"))
             return
         try:
             r = subprocess.run(
@@ -925,7 +925,7 @@ class App(ctk.CTk):
                 creationflags=subprocess.CREATE_NO_WINDOW, timeout=15)
             if r.returncode != 0:
                 err = (r.stdout + r.stderr).strip().splitlines()
-                msg = err[-1] if err else f"código {r.returncode}"
+                msg = err[-1] if err else f"cÃ³digo {r.returncode}"
                 self.after(0, lambda m=msg: self._src_status.configure(
                     text=f"Falha ao montar: {m}", text_color="#f87171"))
                 return
@@ -942,14 +942,14 @@ class App(ctk.CTk):
             except: pass
 
     def _pick_out(self):
-        path = filedialog.askdirectory(title="Pasta de saída")
+        path = filedialog.askdirectory(title="Pasta de saÃ­da")
         if path:
             self._out_folder.set(path)
             self._update_free_space()
             _save_config({**_load_config(), "out_folder": path})
 
     def _pick_temp(self):
-        path = filedialog.askdirectory(title="Pasta temporária")
+        path = filedialog.askdirectory(title="Pasta temporÃ¡ria")
         if path:
             self._temp_folder.set(path)
             _save_config({**_load_config(), "temp_folder": path})
@@ -963,9 +963,9 @@ class App(ctk.CTk):
                 self._stat_free.configure(text=txt)
             except: pass
 
-    # ────────────────────────────────────────────────────────
+    # â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
     #  Output name generation
-    # ────────────────────────────────────────────────────────
+    # â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
     def _update_out_name(self, *_):
         if self._name_preset.get() == "custom": return
         info  = self._game_info
@@ -981,9 +981,9 @@ class App(ctk.CTk):
         else:                   name = f"{sep}{title} ({ver}){ext}" if title and ver else (f"{sep}{title}{ext}" if title else f"{base}{ext}")
         self._output_name.set(name)
 
-    # ────────────────────────────────────────────────────────
+    # â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
     #  CPU slider
-    # ────────────────────────────────────────────────────────
+    # â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
     def _on_cpu_slider(self, value):
         cpus = int(value)
         self._cpu_lbl.configure(text=str(cpus))
@@ -997,9 +997,9 @@ class App(ctk.CTk):
     def _get_cpus(self):
         return 0 if self._cpu_auto.get() else int(self._cpu_slider.get())
 
-    # ────────────────────────────────────────────────────────
+    # â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
     #  Build
-    # ────────────────────────────────────────────────────────
+    # â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
     def _build_start(self):
         mode     = self._src_mode.get()
         out_dir  = self._out_folder.get().strip()
@@ -1011,11 +1011,11 @@ class App(ctk.CTk):
         temp_dir = self._temp_folder.get().strip() or os.environ.get("TEMP", os.path.expanduser("~"))
 
         if not out_dir:
-            self._log_append(self._build_log, "[ERRO] Informe a pasta de saída.\n", clear=True); return
+            self._log_append(self._build_log, "[ERRO] Informe a pasta de saÃ­da.\n", clear=True); return
         if not out_name:
-            self._log_append(self._build_log, "[ERRO] Informe o nome do arquivo de saída.\n", clear=True); return
+            self._log_append(self._build_log, "[ERRO] Informe o nome do arquivo de saÃ­da.\n", clear=True); return
 
-        self._build_btn.configure(fg_color="#dc2626", hover_color="#b91c1c", text="⬛  Stop", command=self._build_stop)
+        self._build_btn.configure(fg_color="#dc2626", hover_color="#b91c1c", text="â¬›  Stop", command=self._build_stop)
         self._build_bar.set(0)
         self._build_phase.configure(text="")
         self._log_clear(self._build_log)
@@ -1025,19 +1025,19 @@ class App(ctk.CTk):
         if mode == "exfat":
             src_exfat = self._src_exfat.get().strip()
             if not src_exfat or not os.path.isfile(src_exfat):
-                self._log_append(self._build_log, "[ERRO] Selecione um arquivo .exfat válido.\n", clear=True)
-                self._build_btn.configure(state="normal", text="▶  Build"); return
+                self._log_append(self._build_log, "[ERRO] Selecione um arquivo .exfat vÃ¡lido.\n", clear=True)
+                self._build_btn.configure(state="normal", text="â–¶  Build"); return
             threading.Thread(target=self._do_build_from_exfat,
                              args=(src_exfat, output, cpus, comp_eng, comp_lvl),
                              daemon=True).start()
         else:
             folder = self._src_folder.get().strip()
             if not folder or not os.path.isdir(folder):
-                self._log_append(self._build_log, "[ERRO] Selecione um dump válido.\n", clear=True)
-                self._build_btn.configure(state="normal", text="▶  Build"); return
+                self._log_append(self._build_log, "[ERRO] Selecione um dump vÃ¡lido.\n", clear=True)
+                self._build_btn.configure(state="normal", text="â–¶  Build"); return
             if fmt == "pfs_exfat" and not _find_osfmount():
-                self._log_append(self._build_log, "[ERRO] OSFMount não encontrado (necessário para PFS exFAT).\n", clear=True)
-                self._build_btn.configure(state="normal", text="▶  Build"); return
+                self._log_append(self._build_log, "[ERRO] OSFMount nÃ£o encontrado (necessÃ¡rio para PFS exFAT).\n", clear=True)
+                self._build_btn.configure(state="normal", text="â–¶  Build"); return
             gen_ampr    = self._ampr_index.get()
             backport    = self._backport_ext.get()
             threading.Thread(target=self._do_build,
@@ -1068,7 +1068,7 @@ class App(ctk.CTk):
             fakelib_dest = os.path.join(out_dir, title_id, "fakelib")
             os.makedirs(os.path.dirname(fakelib_dest), exist_ok=True)
             self.after(0, lambda: self._log_append(self._build_log,
-                f"[Backport] Movendo fakelib → {fakelib_dest}\n"))
+                f"[Backport] Movendo fakelib â†’ {fakelib_dest}\n"))
             shutil.copytree(fakelib_src, fakelib_dest, dirs_exist_ok=True)
             shutil.rmtree(fakelib_src)
 
@@ -1081,9 +1081,9 @@ class App(ctk.CTk):
                 if ok and exists:
                     msg = f"[AMPR] Index gerado: {ampr_path}\n"
                 elif not ok:
-                    msg = f"[AMPR ERRO] build_ampr_index retornou False — pasta inválida: {folder}\n"
+                    msg = f"[AMPR ERRO] build_ampr_index retornou False â€” pasta invÃ¡lida: {folder}\n"
                 else:
-                    msg = f"[AMPR ERRO] Função retornou True mas arquivo não encontrado em: {ampr_path}\n"
+                    msg = f"[AMPR ERRO] FunÃ§Ã£o retornou True mas arquivo nÃ£o encontrado em: {ampr_path}\n"
                 self.after(0, lambda m=msg: self._log_append(self._build_log, m))
             except Exception as e:
                 import traceback
@@ -1119,7 +1119,7 @@ class App(ctk.CTk):
                 os.makedirs(temp_dir, exist_ok=True)
                 exfat = os.path.join(temp_dir, f"{name}.exfat")
                 self.after(0, lambda: self._build_phase.configure(
-                    text="Passo 1/2 — Criando imagem exFAT...", text_color="white"))
+                    text="Passo 1/2 â€” Criando imagem exFAT...", text_color="white"))
                 cmd_ps1 = ["powershell.exe", "-NoProfile", "-ExecutionPolicy", "Bypass",
                            "-File", _PS1_PATH, "-ImagePath", exfat,
                            "-SourceDir", folder, "-ForceOverwrite"]
@@ -1139,7 +1139,7 @@ class App(ctk.CTk):
             if fakelib_dest and os.path.isdir(fakelib_dest) and not os.path.isdir(fakelib_src):
                 shutil.copytree(fakelib_dest, fakelib_src)
 
-        self._finish(self._build_phase, self._build_btn, self._build_start_time, success, "▶  Build")
+        self._finish(self._build_phase, self._build_btn, self._build_start_time, success, "â–¶  Build")
 
     def _do_build_from_exfat(self, src_exfat, output, cpus, comp_eng, comp_lvl):
         staging = os.path.join(os.environ.get("TEMP", os.path.expanduser("~")), "_mkpfs_staging")
@@ -1157,11 +1157,11 @@ class App(ctk.CTk):
                                      self._build_log, "", success_file=output)
         finally:
             shutil.rmtree(staging, ignore_errors=True)
-        self._finish(self._build_phase, self._build_btn, self._build_start_time, success, "▶  Build")
+        self._finish(self._build_phase, self._build_btn, self._build_start_time, success, "â–¶  Build")
 
-    # ────────────────────────────────────────────────────────
+    # â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
     #  Extrair
-    # ────────────────────────────────────────────────────────
+    # â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
     def _t5_pick_src(self):
         current = self._t5_source_file.get()
         path = filedialog.askopenfilename(
@@ -1178,7 +1178,7 @@ class App(ctk.CTk):
 
     def _t5_pick_out(self):
         current = self._t5_output_folder.get()
-        path = filedialog.askdirectory(title="Pasta de saída", initialdir=current if current else None)
+        path = filedialog.askdirectory(title="Pasta de saÃ­da", initialdir=current if current else None)
         if path:
             self._t5_output_folder.set(path)
             _save_config({**_load_config(), "t5_output_dir": path})
@@ -1187,9 +1187,9 @@ class App(ctk.CTk):
         source = self._t5_source_file.get().strip()
         output = self._t5_output_folder.get().strip()
         if not source or not os.path.isfile(source):
-            self._log_append(self._t5_log, "[ERRO] Selecione um arquivo de imagem válido.\n", clear=True); return
+            self._log_append(self._t5_log, "[ERRO] Selecione um arquivo de imagem vÃ¡lido.\n", clear=True); return
         if not output:
-            self._log_append(self._t5_log, "[ERRO] Informe a pasta de saída.\n", clear=True); return
+            self._log_append(self._t5_log, "[ERRO] Informe a pasta de saÃ­da.\n", clear=True); return
         self._t5_btn.configure(state="disabled", text="Extraindo...")
         self._t5_bar.start()
         self._t5_phase.configure(text="Extraindo arquivos...", text_color="white")
@@ -1223,16 +1223,16 @@ class App(ctk.CTk):
             env = os.environ.copy(); env["PYTHONUTF8"] = "1"; env["PYTHONIOENCODING"] = "utf-8"
 
             if ext == ".exfat":
-                # Direct exfat → unpack to output folder
+                # Direct exfat â†’ unpack to output folder
                 self.after(0, lambda: self._t5_phase.configure(text="Extraindo exFAT...", text_color="white"))
                 rc = self._t5_unpack(source, output)
                 success = rc == 0
 
             else:
-                # ffpfsc / ffpfs — stage to temp dir first to detect intermediate type
+                # ffpfsc / ffpfs â€” stage to temp dir first to detect intermediate type
                 stage = tempfile.mkdtemp(prefix="pfs_stage_")
                 try:
-                    self.after(0, lambda: self._t5_phase.configure(text="Passo 1/2 — descomprimindo...", text_color="white"))
+                    self.after(0, lambda: self._t5_phase.configure(text="Passo 1/2 â€” descomprimindo...", text_color="white"))
                     rc = self._t5_unpack(source, stage, deep=False)
                     if rc != 0:
                         success = False
@@ -1243,27 +1243,27 @@ class App(ctk.CTk):
 
                         if dat_files:
                             dat = dat_files[0]
-                            self.after(0, lambda: self._t5_phase.configure(text="Passo 2/2 — extraindo dump...", text_color="white"))
-                            self.after(0, lambda: self._log_append(self._t5_log, f"[INFO] Intermediário: {os.path.basename(dat)} → extraindo para pasta...\n"))
+                            self.after(0, lambda: self._t5_phase.configure(text="Passo 2/2 â€” extraindo dump...", text_color="white"))
+                            self.after(0, lambda: self._log_append(self._t5_log, f"[INFO] IntermediÃ¡rio: {os.path.basename(dat)} â†’ extraindo para pasta...\n"))
                             rc2 = self._t5_unpack(dat, output)
                             success = rc2 == 0
 
                         elif exfat_files:
                             exfat = exfat_files[0]
                             if self._t5_extract_exfat.get():
-                                self.after(0, lambda: self._t5_phase.configure(text="Passo 2/2 — extraindo exFAT...", text_color="white"))
-                                self.after(0, lambda: self._log_append(self._t5_log, f"[INFO] Intermediário: {os.path.basename(exfat)} → extraindo para pasta...\n"))
+                                self.after(0, lambda: self._t5_phase.configure(text="Passo 2/2 â€” extraindo exFAT...", text_color="white"))
+                                self.after(0, lambda: self._log_append(self._t5_log, f"[INFO] IntermediÃ¡rio: {os.path.basename(exfat)} â†’ extraindo para pasta...\n"))
                                 rc2 = self._t5_unpack(exfat, output)
                                 success = rc2 == 0
                             else:
                                 # Keep exfat as output
                                 os.makedirs(output, exist_ok=True)
                                 dest = os.path.join(output, os.path.basename(exfat))
-                                self.after(0, lambda: self._log_append(self._t5_log, f"[INFO] exFAT extraído: {dest}\n"))
+                                self.after(0, lambda: self._log_append(self._t5_log, f"[INFO] exFAT extraÃ­do: {dest}\n"))
                                 shutil.move(exfat, dest)
                                 success = True
                         else:
-                            # Unknown intermediates — just move everything to output
+                            # Unknown intermediates â€” just move everything to output
                             os.makedirs(output, exist_ok=True)
                             for f in os.listdir(stage):
                                 shutil.move(os.path.join(stage, f), os.path.join(output, f))
@@ -1272,7 +1272,7 @@ class App(ctk.CTk):
                     shutil.rmtree(stage, ignore_errors=True)
 
         except FileNotFoundError:
-            self.after(0, lambda: self._log_append(self._t5_log, f"[ERRO] mkpfs não encontrado: {_MKPFS}\n"))
+            self.after(0, lambda: self._log_append(self._t5_log, f"[ERRO] mkpfs nÃ£o encontrado: {_MKPFS}\n"))
             success = False
         except Exception as e:
             self.after(0, lambda: self._log_append(self._t5_log, f"[ERRO] {e}\n"))
@@ -1280,9 +1280,9 @@ class App(ctk.CTk):
         self.after(0, self._t5_bar.stop)
         self._finish(self._t5_phase, self._t5_btn, self._t5_start_time, success, "Extrair")
 
-    # ────────────────────────────────────────────────────────
+    # â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
     #  Atualizar AMPR
-    # ────────────────────────────────────────────────────────
+    # â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
     def _ua_pick_src(self):
         current = self._ua_source.get()
         path = filedialog.askopenfilename(
@@ -1311,16 +1311,16 @@ class App(ctk.CTk):
         output = self._ua_output.get().strip()
         ver    = self._ua_ver_var.get()
         if not source or not os.path.isfile(source):
-            self._log_append(self._ua_log, "[ERRO] Selecione um arquivo .ffpfsc válido.\n", clear=True); return
+            self._log_append(self._ua_log, "[ERRO] Selecione um arquivo .ffpfsc vÃ¡lido.\n", clear=True); return
         if not output:
-            self._log_append(self._ua_log, "[ERRO] Informe o arquivo de saída.\n", clear=True); return
+            self._log_append(self._ua_log, "[ERRO] Informe o arquivo de saÃ­da.\n", clear=True); return
         if not ver:
-            self._log_append(self._ua_log, "[ERRO] Selecione a versão do AMPR.\n", clear=True); return
+            self._log_append(self._ua_log, "[ERRO] Selecione a versÃ£o do AMPR.\n", clear=True); return
         regen = self._ua_regen_index.get()
         cpus  = self._get_cpus()
         comp_lvl = self._comp_level.get().split()[0]
         comp_eng = self._comp_engine.get()
-        self._ua_btn.configure(fg_color="#dc2626", hover_color="#b91c1c", text="⬛  Stop",
+        self._ua_btn.configure(fg_color="#dc2626", hover_color="#b91c1c", text="â¬›  Stop",
                                command=lambda: self._ua_stop())
         self._ua_bar.start()
         self._ua_phase.configure(text="Iniciando...", text_color="white")
@@ -1335,11 +1335,11 @@ class App(ctk.CTk):
             self._active_proc.terminate()
             try: self._active_proc.wait(timeout=3)
             except: self._active_proc.kill()
-        self._log_append(self._ua_log, "[INFO] Cancelado pelo usuário.\n")
-        self._ua_phase.configure(text="✗ Cancelado", text_color="#f87171")
+        self._log_append(self._ua_log, "[INFO] Cancelado pelo usuÃ¡rio.\n")
+        self._ua_phase.configure(text="âœ— Cancelado", text_color="#f87171")
         self._ua_bar.stop(); self._ua_bar.set(0)
         self._ua_btn.configure(fg_color="#0d9488", hover_color="#0a7b72",
-                               text="▶  Atualizar", command=self._ua_start)
+                               text="â–¶  Atualizar", command=self._ua_start)
 
     def _ua_run(self, source, output, ver, regen, cpus, comp_eng, comp_lvl):
         import tempfile, glob as _glob
@@ -1350,8 +1350,8 @@ class App(ctk.CTk):
         try:
             env = os.environ.copy(); env["PYTHONUTF8"] = "1"; env["PYTHONIOENCODING"] = "utf-8"
 
-            # ── Step 1: unpack ffpfsc → stage1
-            self.after(0, lambda: self._ua_phase.configure(text="Passo 1/4 — descomprimindo .ffpfsc...", text_color="white"))
+            # â”€â”€ Step 1: unpack ffpfsc â†’ stage1
+            self.after(0, lambda: self._ua_phase.configure(text="Passo 1/4 â€” descomprimindo .ffpfsc...", text_color="white"))
             cmd = [_MKPFS, "unpack", "--no-progress", source, stage1]
             proc = subprocess.Popen(cmd, stdout=subprocess.PIPE, stderr=subprocess.STDOUT,
                                     text=True, encoding="utf-8", errors="replace",
@@ -1366,13 +1366,13 @@ class App(ctk.CTk):
                 self.after(0, lambda: self._log_append(self._ua_log, "[ERRO] Falha ao descomprimir.\n"))
                 return
 
-            # ── Detect intermediate type
+            # â”€â”€ Detect intermediate type
             dat_files   = _glob.glob(os.path.join(stage1, "*.dat"))
             exfat_files = _glob.glob(os.path.join(stage1, "*.exfat"))
 
             if dat_files:
-                # PFS Raw: unpack .dat → stage2 (game folder)
-                self.after(0, lambda: self._ua_phase.configure(text="Passo 2/4 — extraindo PFS Raw...", text_color="white"))
+                # PFS Raw: unpack .dat â†’ stage2 (game folder)
+                self.after(0, lambda: self._ua_phase.configure(text="Passo 2/4 â€” extraindo PFS Raw...", text_color="white"))
                 self.after(0, lambda: self._log_append(self._ua_log, f"[INFO] Tipo detectado: PFS Raw\n"))
                 cmd2 = [_MKPFS, "unpack", "--no-progress", "--overwrite", dat_files[0], stage2]
                 proc2 = subprocess.Popen(cmd2, stdout=subprocess.PIPE, stderr=subprocess.STDOUT,
@@ -1390,8 +1390,8 @@ class App(ctk.CTk):
                 game_folder = stage2
 
             elif exfat_files:
-                # PFS exFAT: mount .exfat → copy files to stage2
-                self.after(0, lambda: self._ua_phase.configure(text="Passo 2/4 — extraindo exFAT...", text_color="white"))
+                # PFS exFAT: mount .exfat â†’ copy files to stage2
+                self.after(0, lambda: self._ua_phase.configure(text="Passo 2/4 â€” extraindo exFAT...", text_color="white"))
                 self.after(0, lambda: self._log_append(self._ua_log, f"[INFO] Tipo detectado: PFS exFAT\n"))
                 cmd2 = [_MKPFS, "unpack", "--no-progress", "--overwrite", "--deep", exfat_files[0], stage2]
                 proc2 = subprocess.Popen(cmd2, stdout=subprocess.PIPE, stderr=subprocess.STDOUT,
@@ -1408,11 +1408,11 @@ class App(ctk.CTk):
                     return
                 game_folder = stage2
             else:
-                self.after(0, lambda: self._log_append(self._ua_log, "[ERRO] Tipo não reconhecido (nem .dat nem .exfat).\n"))
+                self.after(0, lambda: self._log_append(self._ua_log, "[ERRO] Tipo nÃ£o reconhecido (nem .dat nem .exfat).\n"))
                 return
 
-            # ── Step 3: replace libSceAmpr.sprx
-            self.after(0, lambda: self._ua_phase.configure(text="Passo 3/4 — aplicando AMPR...", text_color="white"))
+            # â”€â”€ Step 3: replace libSceAmpr.sprx
+            self.after(0, lambda: self._ua_phase.configure(text="Passo 3/4 â€” aplicando AMPR...", text_color="white"))
             sprx_data = AMPR_SPRX_BUNDLES.get(ver)
             if sprx_data:
                 fakelib = os.path.join(game_folder, "fakelib")
@@ -1421,14 +1421,14 @@ class App(ctk.CTk):
                     f.write(sprx_data)
                 self.after(0, lambda: self._log_append(self._ua_log, f"[INFO] AMPR v{ver} aplicado.\n"))
 
-            # ── Regen index
+            # â”€â”€ Regen index
             if regen:
                 old_idx = os.path.join(game_folder, "ampr_emu.index")
                 if os.path.exists(old_idx): os.remove(old_idx)
                 build_ampr_index(game_folder, log_fn=lambda m: self.after(0, lambda msg=m: self._log_append(self._ua_log, msg)))
 
-            # ── Step 4: repack → output ffpfsc
-            self.after(0, lambda: self._ua_phase.configure(text="Passo 4/4 — reempacotando...", text_color="white"))
+            # â”€â”€ Step 4: repack â†’ output ffpfsc
+            self.after(0, lambda: self._ua_phase.configure(text="Passo 4/4 â€” reempacotando...", text_color="white"))
             dat_out = os.path.join(staging, "pfs_image.dat")
             cmd3 = [_MKPFS, "pack", "folder", "--raw", "--no-compress",
                     "--no-adjust-output-file-extension", "--version", "PS5",
@@ -1461,12 +1461,12 @@ class App(ctk.CTk):
             shutil.rmtree(staging, ignore_errors=True)
 
         self.after(0, self._ua_bar.stop)
-        self._finish(self._ua_phase, self._ua_btn, self._ua_start_time, success, "▶  Atualizar")
+        self._finish(self._ua_phase, self._ua_btn, self._ua_start_time, success, "â–¶  Atualizar")
         self.after(0, lambda: self._ua_btn.configure(command=self._ua_start))
 
-    # ────────────────────────────────────────────────────────
+    # â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
     #  Game info loading
-    # ────────────────────────────────────────────────────────
+    # â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
     def _load_info(self, folder: str):
         sce_sys   = os.path.join(folder, "sce_sys")
         json_path = os.path.join(sce_sys, "param.json")
@@ -1490,7 +1490,7 @@ class App(ctk.CTk):
                     try: total += os.path.getsize(os.path.join(dp, f))
                     except OSError: pass
             size_str = f"{total/(1<<30):.2f} GB" if total >= 1<<30 else f"{total/(1<<20):.2f} MB"
-        except: size_str = "—"
+        except: size_str = "â€”"
 
         title    = str(raw.get("TITLE") or raw.get("TITLE_00") or "") if raw else ""
         title_id = str(raw.get("TITLE_ID", "")) if raw else ""
@@ -1505,18 +1505,18 @@ class App(ctk.CTk):
                 self._info_icon_lbl._ctk_image = ctk_img
             self._info_title_lbl.configure(text=title or os.path.basename(folder.rstrip("/\\")))
             self._info_tid_lbl.configure(text=title_id)
-            self._stat_ver.configure(text=versao or "—")
+            self._stat_ver.configure(text=versao or "â€”")
             self._stat_size.configure(text=size_str)
-            self._src_status.configure(text="✓ Pronto para converter", text_color="#0d9488")
+            self._src_status.configure(text="âœ“ Pronto para converter", text_color="#0d9488")
             self._update_out_name()
             self._ampr_detected = _detect_ampr_version(folder)
             self._refresh_ampr_ui()
 
         self.after(0, update)
 
-    # ────────────────────────────────────────────────────────
+    # â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
     #  Core runners
-    # ────────────────────────────────────────────────────────
+    # â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
     def _run_cmd(self, cmd, bar, phase_label, log, step_prefix, success_file=None) -> bool:
         try:
             env = os.environ.copy(); env["PYTHONUTF8"] = "1"; env["PYTHONIOENCODING"] = "utf-8"
@@ -1529,7 +1529,7 @@ class App(ctk.CTk):
                 if m:
                     pct = int(m.group(1)) / 100.0
                     phase = m.group(2).capitalize()
-                    txt = f"{step_prefix} — {phase}  {int(pct*100)}%" if step_prefix else f"{phase}  {int(pct*100)}%"
+                    txt = f"{step_prefix} â€” {phase}  {int(pct*100)}%" if step_prefix else f"{phase}  {int(pct*100)}%"
                     self.after(0, lambda v=pct, t=txt: (bar.set(v), phase_label.configure(text=t, text_color="white")))
                 else:
                     s = line.rstrip("\n")
@@ -1539,7 +1539,7 @@ class App(ctk.CTk):
             file_ok = bool(success_file and os.path.exists(success_file) and os.path.getsize(success_file) > 0)
             return proc.returncode == 0 or file_ok
         except FileNotFoundError:
-            self.after(0, lambda: self._log_append(log, f"[ERRO] mkpfs não encontrado: {_MKPFS}\n"))
+            self.after(0, lambda: self._log_append(log, f"[ERRO] mkpfs nÃ£o encontrado: {_MKPFS}\n"))
             return False
         except Exception as e:
             self.after(0, lambda: self._log_append(log, f"[ERRO] {e}\n"))
@@ -1562,7 +1562,7 @@ class App(ctk.CTk):
                     step = int(m.group(1)); total = int(m.group(2))
                     pct = (step_offset + step / total) / total_steps
                     lbl = step_labels.get(step, s)
-                    if total_steps > 1: lbl = f"Passo 1/2 — {lbl}"
+                    if total_steps > 1: lbl = f"Passo 1/2 â€” {lbl}"
                     self.after(0, lambda v=pct, t=lbl: (bar.set(v), phase_label.configure(text=t, text_color="white")))
                 self.after(0, lambda l=s: self._log_append(log, l + "\n"))
             proc.stdout.close(); proc.wait()
@@ -1572,22 +1572,22 @@ class App(ctk.CTk):
             self.after(0, lambda: self._log_append(log, f"[ERRO] {e}\n"))
             return False
 
-    # ────────────────────────────────────────────────────────
+    # â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
     #  Helpers
-    # ────────────────────────────────────────────────────────
+    # â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
     def _build_stop(self):
         if self._active_proc and self._active_proc.poll() is None:
             self._active_proc.terminate()
             try: self._active_proc.wait(timeout=3)
             except: self._active_proc.kill()
-        self._log_append(self._build_log, "[INFO] Cancelado pelo usuário.\n")
-        self._build_phase.configure(text="✗ Cancelado", text_color="#f87171")
+        self._log_append(self._build_log, "[INFO] Cancelado pelo usuÃ¡rio.\n")
+        self._build_phase.configure(text="âœ— Cancelado", text_color="#f87171")
         self._build_bar.set(0)
-        self._build_btn.configure(fg_color="#0d9488", hover_color="#0a7b72", text="▶  Build", command=self._build_start)
+        self._build_btn.configure(fg_color="#0d9488", hover_color="#0a7b72", text="â–¶  Build", command=self._build_start)
 
     def _finish(self, phase_label, btn, start_time, success, btn_label="Converter"):
         elapsed = self._fmt_elapsed(time.time() - start_time)
-        text  = f"✓ Concluído em {elapsed}" if success else f"✗ Falhou após {elapsed}"
+        text  = f"âœ“ ConcluÃ­do em {elapsed}" if success else f"âœ— Falhou apÃ³s {elapsed}"
         color = "#a3e635" if success else "#f87171"
         self.after(0, lambda: phase_label.configure(text=text, text_color=color))
         self.after(0, lambda: btn.configure(fg_color="#0d9488", hover_color="#0a7b72", text=btn_label, command=self._build_start))
@@ -1658,3 +1658,4 @@ class App(ctk.CTk):
 if __name__ == "__main__":
     app = App()
     app.mainloop()
+
