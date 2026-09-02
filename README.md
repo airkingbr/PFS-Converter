@@ -183,6 +183,10 @@ python -m PyInstaller --noconfirm --onefile --noconsole --uac-admin \
 
 ## Histórico de versões
 
+### v1.4.3
+- **Atualização mkpfs 0.0.9 → 1.0.0**
+- **PFS exFAT sem OSFMount**: modo PFS exFAT agora usa `mkpfs pack folder` diretamente em um único passo, eliminando a dependência do OSFMount e do script PowerShell para esse formato — conversão mais rápida e sem arquivo `.exfat` temporário em disco
+
 ### v1.4.2
 - **Novas versões do AMPR**: adicionada versão `0.3.6.6-test`
 

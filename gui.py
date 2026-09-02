@@ -47,7 +47,7 @@ _RE_PS1_STEP = re.compile(r"\[(\d+)/(\d+)\]")
 ctk.set_appearance_mode("dark")
 ctk.set_default_color_theme("blue")
 
-VERSION = "1.4.2"
+VERSION = "1.4.3"
 
 CONFIG_PATH = os.path.join(os.environ.get("APPDATA", os.path.expanduser("~")), "PFS Converter", "config.json")
 
@@ -455,7 +455,7 @@ class App(ctk.CTk):
         formats = [
             ("exfat",     "💾", "exFAT",    "Imagem montável\npara a maioria",  True),
             ("pfs_raw",   "📦", "PFS Raw",  ".dat → .ffpfsc\ncomprimido",       False),
-            ("pfs_exfat", "🗜️", "PFS exFAT","Via exFAT → .ffpfsc\ncomprimido", False),
+            ("pfs_exfat", "🗜️", "PFS exFAT","Pasta → .ffpfsc\num passo", False),
         ]
         for col, (key, icon, name, desc, rec) in enumerate(formats):
             sel = self._fmt_var.get() == key
@@ -1036,9 +1036,6 @@ class App(ctk.CTk):
             if not folder or not os.path.isdir(folder):
                 self._log_append(self._build_log, "[ERRO] Selecione um dump válido.\n", clear=True)
                 self._build_btn.configure(state="normal", text="▶  Build"); return
-            if fmt == "pfs_exfat" and not _find_osfmount():
-                self._log_append(self._build_log, "[ERRO] OSFMount não encontrado (necessário para PFS exFAT).\n", clear=True)
-                self._build_btn.configure(state="normal", text="▶  Build"); return
             gen_ampr    = self._ampr_index.get()
             backport    = self._backport_ext.get()
             threading.Thread(target=self._do_build,
@@ -1117,23 +1114,16 @@ class App(ctk.CTk):
                     except: pass
 
             elif fmt == "pfs_exfat":
-                os.makedirs(temp_dir, exist_ok=True)
-                exfat = os.path.join(temp_dir, f"{name}.exfat")
-                self.after(0, lambda: self._build_phase.configure(
-                    text="Passo 1/2 — Criando imagem exFAT...", text_color="white"))
-                cmd_ps1 = ["powershell.exe", "-NoProfile", "-ExecutionPolicy", "Bypass",
-                           "-File", _PS1_PATH, "-ImagePath", exfat,
-                           "-SourceDir", folder, "-ForceOverwrite"]
-                success = self._run_cmd_ps1(cmd_ps1, self._build_bar, self._build_phase,
-                                             self._build_log, step_offset=0, total_steps=2)
-                if success:
-                    if os.path.exists(output): os.remove(output)
-                    success = self._run_cmd(pack_file_cmd(exfat, output),
-                                             self._build_bar, self._build_phase,
-                                             self._build_log, "Passo 2/2", success_file=output)
-                if os.path.exists(exfat):
-                    try: os.remove(exfat)
-                    except: pass
+                if os.path.exists(output): os.remove(output)
+                cmd = [_MKPFS, "pack", "folder", "--version", "PS5", "--inode-bits", "32",
+                       "--cpu-count", str(cpus), "--temp-folder", staging]
+                if comp_eng == "zlib-isa":
+                    cmd += ["--compression-backend", "zlib-isa"]
+                if comp_lvl.isdigit():
+                    cmd += ["--compression-level", comp_lvl]
+                cmd += [folder, output]
+                success = self._run_cmd(cmd, self._build_bar, self._build_phase,
+                                        self._build_log, "", success_file=output)
         finally:
             shutil.rmtree(staging, ignore_errors=True)
             # Restore fakelib to dump folder
