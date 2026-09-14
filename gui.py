@@ -1581,7 +1581,7 @@ class App(ctk.CTk):
         color = "#a3e635" if success else "#f87171"
         cmd = btn_command if btn_command is not None else self._build_start
         self.after(0, lambda: phase_label.configure(text=text, text_color=color))
-        self.after(0, lambda: btn.configure(fg_color="#0d9488", hover_color="#0a7b72", text=btn_label, command=cmd))
+        self.after(0, lambda: btn.configure(state="normal", fg_color="#0d9488", hover_color="#0a7b72", text=btn_label, command=cmd))
 
     def _log_append(self, widget, text, clear=False):
         widget.configure(state="normal")
