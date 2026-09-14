@@ -1269,7 +1269,7 @@ class App(ctk.CTk):
             self.after(0, lambda: self._log_append(self._t5_log, f"[ERRO] {e}\n"))
             success = False
         self.after(0, self._t5_bar.stop)
-        self._finish(self._t5_phase, self._t5_btn, self._t5_start_time, success, "Extrair")
+        self._finish(self._t5_phase, self._t5_btn, self._t5_start_time, success, "Extrair", btn_command=self._t5_start)
 
     # ────────────────────────────────────────────────────────
     #  Atualizar AMPR
@@ -1452,8 +1452,7 @@ class App(ctk.CTk):
             shutil.rmtree(staging, ignore_errors=True)
 
         self.after(0, self._ua_bar.stop)
-        self._finish(self._ua_phase, self._ua_btn, self._ua_start_time, success, "▶  Atualizar")
-        self.after(0, lambda: self._ua_btn.configure(command=self._ua_start))
+        self._finish(self._ua_phase, self._ua_btn, self._ua_start_time, success, "▶  Atualizar", btn_command=self._ua_start)
 
     # ────────────────────────────────────────────────────────
     #  Game info loading
@@ -1576,12 +1575,13 @@ class App(ctk.CTk):
         self._build_bar.set(0)
         self._build_btn.configure(fg_color="#0d9488", hover_color="#0a7b72", text="▶  Build", command=self._build_start)
 
-    def _finish(self, phase_label, btn, start_time, success, btn_label="Converter"):
+    def _finish(self, phase_label, btn, start_time, success, btn_label="Converter", btn_command=None):
         elapsed = self._fmt_elapsed(time.time() - start_time)
         text  = f"✓ Concluído em {elapsed}" if success else f"✗ Falhou após {elapsed}"
         color = "#a3e635" if success else "#f87171"
+        cmd = btn_command if btn_command is not None else self._build_start
         self.after(0, lambda: phase_label.configure(text=text, text_color=color))
-        self.after(0, lambda: btn.configure(fg_color="#0d9488", hover_color="#0a7b72", text=btn_label, command=self._build_start))
+        self.after(0, lambda: btn.configure(fg_color="#0d9488", hover_color="#0a7b72", text=btn_label, command=cmd))
 
     def _log_append(self, widget, text, clear=False):
         widget.configure(state="normal")
