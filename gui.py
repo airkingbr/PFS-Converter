@@ -49,7 +49,7 @@ _RE_PS1_STEP = re.compile(r"\[(\d+)/(\d+)\]")
 ctk.set_appearance_mode("dark")
 ctk.set_default_color_theme("blue")
 
-VERSION = "1.5.4"
+VERSION = "1.5.5"
 
 CONFIG_PATH = os.path.join(os.environ.get("APPDATA", os.path.expanduser("~")), "PFS Converter", "config.json")
 
@@ -1182,17 +1182,25 @@ class App(ctk.CTk):
             if opts["pub_lib"] and os.path.isfile(opts["pub_lib"]):
                 options.PublishingToolsLibraryPath = opts["pub_lib"]
             else:
-                # Copy libScePubTools.dll to a stable temp path (outside _MEIPASS)
-                # so .NET can locate sidecar files relative to it without issues.
-                import tempfile as _tf
-                _bundled_pub = os.path.join(_FPKG_DIR, "libScePubTools.dll")
-                _stable_pub = os.path.join(_tf.gettempdir(), "libScePubTools.dll")
-                if os.path.isfile(_bundled_pub):
-                    shutil.copy2(_bundled_pub, _stable_pub)
-                options.PublishingToolsLibraryPath = _stable_pub
+                options.PublishingToolsLibraryPath = os.path.join(_FPKG_DIR, "libScePubTools.dll")
 
             if opts.get("temp_dir") and os.path.isdir(opts["temp_dir"]):
                 options.TemporaryDirectory = opts["temp_dir"]
+
+            # Provide placeholder keys so TryLoad*(null) is never called.
+            # Without the Sony PS5 SDK, libScePubTools.dll can't resolve sidecar
+            # key files from its internal directory — setting byte[] keys directly
+            # bypasses that code path entirely.
+            from System import Array, Byte as _Byte
+            def _zeros(n): return Array[_Byte](bytes(n))
+            if not options.PublisherImageKey:
+                options.PublisherImageKey = _zeros(2048)
+            if not options.PublisherEntryKeys:
+                options.PublisherEntryKeys = _zeros(2944)
+            if not options.NapsPfsImageKey:
+                options.NapsPfsImageKey = _zeros(32)
+            if not options.NapsPfsImageSeed:
+                options.NapsPfsImageSeed = _zeros(16)
 
             from System import Action
             def _log_cb(msg):
