@@ -25,8 +25,6 @@ _ICON_PATH      = os.path.join(_BUNDLE_DIR, "icon.ico")
 _PS1_PATH       = os.path.join(_BUNDLE_DIR, "New-OsfExfatImage.ps1")
 _OSFMOUNT_SETUP = os.path.join(_BUNDLE_DIR, "osfmount_setup.exe")
 _MKPFS          = os.path.join(_BUNDLE_DIR, "mkpfs_cli.exe") if getattr(sys, "frozen", False) else "mkpfs"
-_FPKG_DIR       = os.path.join(_BUNDLE_DIR, "fpkg")
-_FPKG_DLL       = os.path.join(_FPKG_DIR, "LibProsperoPkg.dll")
 
 _OSFMOUNT_CANDIDATES = [
     r"C:\Program Files\OSFMount\osfmount.com",
@@ -49,7 +47,7 @@ _RE_PS1_STEP = re.compile(r"\[(\d+)/(\d+)\]")
 ctk.set_appearance_mode("dark")
 ctk.set_default_color_theme("blue")
 
-VERSION = "1.5.5"
+VERSION = "1.4.3"
 
 CONFIG_PATH = os.path.join(os.environ.get("APPDATA", os.path.expanduser("~")), "PFS Converter", "config.json")
 
@@ -264,25 +262,6 @@ class App(ctk.CTk):
         self._ua_regen_index   = ctk.BooleanVar(value=True)
         self._ua_start_time    = 0
 
-        # FPKG builder view state
-        self._fpkg_src         = ctk.StringVar()
-        self._fpkg_out_dir     = ctk.StringVar(value=cfg.get("fpkg_out_dir", ""))
-        self._fpkg_content_id  = ctk.StringVar()
-        self._fpkg_passcode    = ctk.StringVar(value="00000000000000000000000000000000")
-        self._fpkg_mode        = ctk.StringVar(value="Aplicativo")
-        self._fpkg_compression = ctk.StringVar(value="Kraken")
-        self._fpkg_kraken_lvl  = ctk.DoubleVar(value=7.0)
-        self._fpkg_threads     = ctk.StringVar(value="0")
-        self._fpkg_pfs_format  = ctk.StringVar(value="v2")
-        self._fpkg_img_mode    = ctk.StringVar(value="Native")
-        self._fpkg_deterministic = ctk.BooleanVar(value=False)
-        self._fpkg_coalesce    = ctk.BooleanVar(value=True)
-        self._fpkg_adjust_reloc = ctk.BooleanVar(value=True)
-        self._fpkg_force_drm   = ctk.BooleanVar(value=True)
-        self._fpkg_pub_lib     = ctk.StringVar(value=cfg.get("fpkg_pub_lib", ""))
-        self._fpkg_temp_dir    = ctk.StringVar(value=cfg.get("fpkg_temp_dir", ""))
-        self._fpkg_start_time  = 0
-
         self._build_ui()
 
         if not _find_osfmount():
@@ -313,10 +292,6 @@ class App(ctk.CTk):
                                           fg_color="#252535", hover_color="#353545",
                                           command=lambda: self._show_view("ampr"))
         self._nav_ampr.pack(side="left", padx=(4, 0))
-        self._nav_fpkg   = ctk.CTkButton(topbar, text="FPKG", width=80, height=32,
-                                          fg_color="#252535", hover_color="#353545",
-                                          command=lambda: self._show_view("fpkg"))
-        self._nav_fpkg.pack(side="left", padx=(4, 0))
 
         # Build button — far right of topbar
         self._build_btn = ctk.CTkButton(topbar, text="▶  Build", width=130, height=32,
@@ -329,17 +304,15 @@ class App(ctk.CTk):
         self._view_build = ctk.CTkFrame(self, fg_color="transparent")
         self._view_extra = ctk.CTkFrame(self, fg_color="transparent")
         self._view_ampr  = ctk.CTkFrame(self, fg_color="transparent")
-        self._view_fpkg  = ctk.CTkFrame(self, fg_color="transparent")
         self._build_build_view(self._view_build)
         self._build_extra_view(self._view_extra)
         self._build_ampr_view(self._view_ampr)
-        self._build_fpkg_view(self._view_fpkg)
         self._show_view("build")
 
     def _show_view(self, v: str):
-        for frame in (self._view_build, self._view_extra, self._view_ampr, self._view_fpkg):
+        for frame in (self._view_build, self._view_extra, self._view_ampr):
             frame.pack_forget()
-        for btn in (self._nav_build, self._nav_extra, self._nav_ampr, self._nav_fpkg):
+        for btn in (self._nav_build, self._nav_extra, self._nav_ampr):
             btn.configure(fg_color="#252535")
         if v == "build":
             self._view_build.pack(fill="both", expand=True)
@@ -347,12 +320,9 @@ class App(ctk.CTk):
         elif v == "extra":
             self._view_extra.pack(fill="both", expand=True)
             self._nav_extra.configure(fg_color="#0d9488")
-        elif v == "ampr":
+        else:
             self._view_ampr.pack(fill="both", expand=True)
             self._nav_ampr.configure(fg_color="#0d9488")
-        else:
-            self._view_fpkg.pack(fill="both", expand=True)
-            self._nav_fpkg.configure(fg_color="#0d9488")
 
     # ────────────────────────────────────────────────────────
     #  Build view  (sections 1-4, two columns)
@@ -849,382 +819,6 @@ class App(ctk.CTk):
         ctk.CTkLabel(card, text="Log", anchor="w", text_color="gray", font=ctk.CTkFont(size=11)).pack(fill="x", padx=16)
         self._ua_log = ctk.CTkTextbox(card, font=ctk.CTkFont(family="Courier New", size=11), state="disabled")
         self._ua_log.pack(fill="both", expand=True, padx=16, pady=(4, 16))
-
-    # ── FPKG builder view ──────────────────────────────────
-    def _build_fpkg_view(self, parent):
-        parent.columnconfigure(0, weight=1)
-        parent.columnconfigure(1, weight=1)
-        parent.rowconfigure(0, weight=1)
-
-        # Left: source + game info
-        left = ctk.CTkFrame(parent, fg_color="transparent")
-        left.grid(row=0, column=0, sticky="nsew", padx=(10, 5), pady=10)
-        left.rowconfigure(1, weight=1)
-        left.columnconfigure(0, weight=1)
-
-        card_io = self._card(left)
-        card_io.grid(row=0, column=0, sticky="ew", pady=(0, 6))
-        self._sec_hdr(card_io, "📦", "Pasta do Jogo → FPKG")
-        ctk.CTkLabel(card_io, text="Pasta fonte (dump do jogo)", anchor="w",
-                     font=ctk.CTkFont(size=11)).pack(fill="x", padx=16, pady=(0, 2))
-        r1 = ctk.CTkFrame(card_io, fg_color="transparent")
-        r1.pack(fill="x", padx=16, pady=(0, 8))
-        ctk.CTkEntry(r1, textvariable=self._fpkg_src,
-                     placeholder_text="Selecione a pasta...").pack(side="left", fill="x", expand=True, padx=(0, 8))
-        ctk.CTkButton(r1, text="Browse", width=90, command=self._fpkg_pick_src).pack(side="left")
-
-        ctk.CTkLabel(card_io, text="Pasta de saída (.pkg)", anchor="w",
-                     font=ctk.CTkFont(size=11)).pack(fill="x", padx=16, pady=(0, 2))
-        r2 = ctk.CTkFrame(card_io, fg_color="transparent")
-        r2.pack(fill="x", padx=16, pady=(0, 8))
-        ctk.CTkEntry(r2, textvariable=self._fpkg_out_dir,
-                     placeholder_text="Pasta para salvar o .pkg...").pack(side="left", fill="x", expand=True, padx=(0, 8))
-        ctk.CTkButton(r2, text="Browse", width=90, command=self._fpkg_pick_out).pack(side="left")
-
-        ctk.CTkLabel(card_io, text="Content ID (36 chars, auto-lido do param.json)", anchor="w",
-                     font=ctk.CTkFont(size=11)).pack(fill="x", padx=16, pady=(0, 2))
-        ctk.CTkEntry(card_io, textvariable=self._fpkg_content_id,
-                     placeholder_text="EP1234-PPSA00000_00-XXXXXXXXXXXXXXXX").pack(fill="x", padx=16, pady=(0, 8))
-
-        ctk.CTkLabel(card_io, text="Passcode (32 chars hex)", anchor="w",
-                     font=ctk.CTkFont(size=11)).pack(fill="x", padx=16, pady=(0, 2))
-        ctk.CTkEntry(card_io, textvariable=self._fpkg_passcode,
-                     placeholder_text="00000000000000000000000000000000").pack(fill="x", padx=16, pady=(0, 8))
-
-        ctk.CTkLabel(card_io, text="Pasta temporária (opcional)", anchor="w",
-                     font=ctk.CTkFont(size=11)).pack(fill="x", padx=16, pady=(0, 2))
-        r_tmp = ctk.CTkFrame(card_io, fg_color="transparent")
-        r_tmp.pack(fill="x", padx=16, pady=(0, 12))
-        ctk.CTkEntry(r_tmp, textvariable=self._fpkg_temp_dir,
-                     placeholder_text="Deixe vazio para usar %TEMP%...").pack(side="left", fill="x", expand=True, padx=(0, 8))
-        ctk.CTkButton(r_tmp, text="Browse", width=90, command=self._fpkg_pick_tmp).pack(side="left")
-
-        # Log card
-        card_log = self._card(left)
-        card_log.grid(row=1, column=0, sticky="nsew")
-        ctk.CTkLabel(card_log, text="Log", anchor="w", text_color="gray",
-                     font=ctk.CTkFont(size=11)).pack(fill="x", padx=16, pady=(10, 2))
-        self._fpkg_log = ctk.CTkTextbox(card_log, font=ctk.CTkFont(family="Courier New", size=11),
-                                         state="disabled")
-        self._fpkg_log.pack(fill="both", expand=True, padx=16, pady=(0, 16))
-
-        # Right: options + build
-        right = ctk.CTkFrame(parent, fg_color="transparent")
-        right.grid(row=0, column=1, sticky="nsew", padx=(5, 10), pady=10)
-        right.columnconfigure(0, weight=1)
-
-        card_opts = self._card(right)
-        card_opts.pack(fill="x", pady=(0, 6))
-        self._sec_hdr(card_opts, "⚙", "Opções de Build")
-
-        def _row(parent, lbl, widget_fn):
-            f = ctk.CTkFrame(parent, fg_color="transparent")
-            f.pack(fill="x", padx=16, pady=2)
-            ctk.CTkLabel(f, text=lbl, width=160, anchor="w",
-                         font=ctk.CTkFont(size=11)).pack(side="left")
-            widget_fn(f)
-            return f
-
-        _row(card_opts, "Tipo de volume:", lambda f: ctk.CTkOptionMenu(
-            f, variable=self._fpkg_mode, width=200,
-            values=["Aplicativo", "Homebrew", "DLC (com dados)", "DLC (sem dados)"]).pack(side="left"))
-
-        _row(card_opts, "Compressão:", lambda f: ctk.CTkOptionMenu(
-            f, variable=self._fpkg_compression, width=160,
-            values=["Kraken", "Zlib", "Nenhuma"],
-            command=self._fpkg_update_kraken_state).pack(side="left"))
-
-        self._fpkg_kraken_row = _row(card_opts, "Nível Kraken (-4..9):", lambda f: ctk.CTkSlider(
-            f, variable=self._fpkg_kraken_lvl, from_=-4, to=9, number_of_steps=13,
-            width=120, command=lambda v: self._fpkg_kraken_lbl.configure(
-                text=str(int(float(v))))).pack(side="left", padx=(0, 4)))
-        self._fpkg_kraken_lbl = ctk.CTkLabel(self._fpkg_kraken_row, text="7", width=20,
-                                              font=ctk.CTkFont(size=11))
-        self._fpkg_kraken_lbl.pack(side="left")
-
-        _row(card_opts, "Formato PFS:", lambda f: ctk.CTkSegmentedButton(
-            f, values=["v2", "v3"], variable=self._fpkg_pfs_format, width=120).pack(side="left"))
-
-        _row(card_opts, "Image mode:", lambda f: ctk.CTkSegmentedButton(
-            f, values=["Native", "Plaintext/NoAuth"], variable=self._fpkg_img_mode, width=200).pack(side="left"))
-
-        _row(card_opts, "Threads (0=auto):", lambda f: ctk.CTkEntry(
-            f, textvariable=self._fpkg_threads, width=60).pack(side="left"))
-
-        # Checkboxes
-        chk_frame = ctk.CTkFrame(card_opts, fg_color="transparent")
-        chk_frame.pack(fill="x", padx=16, pady=(6, 4))
-        ctk.CTkCheckBox(chk_frame, text="Build determinístico", variable=self._fpkg_deterministic).pack(anchor="w", pady=2)
-        ctk.CTkCheckBox(chk_frame, text="Coalescer blocos externos", variable=self._fpkg_coalesce).pack(anchor="w", pady=2)
-        ctk.CTkCheckBox(chk_frame, text="Ajustar alinhamento de relocação", variable=self._fpkg_adjust_reloc).pack(anchor="w", pady=2)
-        ctk.CTkCheckBox(chk_frame, text="Forçar DRM padrão (Standard)", variable=self._fpkg_force_drm).pack(anchor="w", pady=2)
-
-        # libScePubTools path (optional)
-        card_lib = self._card(right)
-        card_lib.pack(fill="x", pady=(0, 6))
-        ctk.CTkLabel(card_lib, text="libScePubTools.dll (opcional)", anchor="w",
-                     font=ctk.CTkFont(size=11, weight="bold")).pack(fill="x", padx=16, pady=(10, 2))
-        ctk.CTkLabel(card_lib, text="Deixe vazio para usar a DLL embutida", anchor="w",
-                     font=ctk.CTkFont(size=11), text_color="gray").pack(fill="x", padx=16, pady=(0, 4))
-        r_lib = ctk.CTkFrame(card_lib, fg_color="transparent")
-        r_lib.pack(fill="x", padx=16, pady=(0, 10))
-        ctk.CTkEntry(r_lib, textvariable=self._fpkg_pub_lib,
-                     placeholder_text="Caminho para libScePubTools.dll...").pack(side="left", fill="x", expand=True, padx=(0, 8))
-        ctk.CTkButton(r_lib, text="Browse", width=90, command=self._fpkg_pick_lib).pack(side="left")
-
-        # Build button + progress
-        card_build = self._card(right)
-        card_build.pack(fill="x")
-        self._fpkg_btn = ctk.CTkButton(card_build, text="▶  Criar FPKG", height=44,
-                                        fg_color="#0d9488", hover_color="#0a7b72",
-                                        font=ctk.CTkFont(size=14, weight="bold"),
-                                        command=self._fpkg_start)
-        self._fpkg_btn.pack(fill="x", padx=16, pady=(12, 4))
-        self._fpkg_phase = ctk.CTkLabel(card_build, text="", anchor="w", font=ctk.CTkFont(size=12))
-        self._fpkg_phase.pack(fill="x", padx=16, pady=(4, 2))
-        self._fpkg_bar = ctk.CTkProgressBar(card_build, height=14, mode="indeterminate")
-        self._fpkg_bar.pack(fill="x", padx=16, pady=(0, 12))
-
-    def _fpkg_update_kraken_state(self, _=None):
-        show = self._fpkg_compression.get() == "Kraken"
-        for w in self._fpkg_kraken_row.winfo_children():
-            w.configure(state="normal" if show else "disabled")
-
-    def _fpkg_pick_src(self):
-        path = filedialog.askdirectory(title="Selecione a pasta do jogo")
-        if not path: return
-        self._fpkg_src.set(path)
-        # Auto-read content ID from param.json
-        param_path = os.path.join(path, "sce_sys", "param.json")
-        if os.path.isfile(param_path):
-            try:
-                with open(param_path, "r", encoding="utf-8") as _f:
-                    _pj = json.load(_f)
-                cid = _pj.get("contentId", "")
-                if cid and len(cid) == 36:
-                    self._fpkg_content_id.set(cid)
-            except: pass
-
-    def _fpkg_pick_out(self):
-        path = filedialog.askdirectory(title="Selecione a pasta de saída")
-        if path:
-            self._fpkg_out_dir.set(path)
-            _save_config({**_load_config(), "fpkg_out_dir": path})
-
-    def _fpkg_pick_tmp(self):
-        path = filedialog.askdirectory(title="Selecione a pasta temporária")
-        if path:
-            self._fpkg_temp_dir.set(path)
-            _save_config({**_load_config(), "fpkg_temp_dir": path})
-
-    def _fpkg_pick_lib(self):
-        path = filedialog.askopenfilename(
-            title="Selecione libScePubTools.dll",
-            filetypes=[("DLL", "*.dll"), ("Todos", "*.*")])
-        if path:
-            self._fpkg_pub_lib.set(path)
-            _save_config({**_load_config(), "fpkg_pub_lib": path})
-
-    def _fpkg_start(self):
-        src = self._fpkg_src.get().strip()
-        out_dir = self._fpkg_out_dir.get().strip()
-        if not src or not os.path.isdir(src):
-            self._fpkg_phase.configure(text="✗ Selecione a pasta do jogo.", text_color="#f87171")
-            return
-        if not out_dir:
-            self._fpkg_phase.configure(text="✗ Selecione a pasta de saída.", text_color="#f87171")
-            return
-        opts = {
-            "content_id": self._fpkg_content_id.get().strip(),
-            "passcode": self._fpkg_passcode.get().strip(),
-            "mode": self._fpkg_mode.get(),
-            "compression": self._fpkg_compression.get(),
-            "kraken_level": self._fpkg_kraken_lvl.get(),
-            "threads": self._fpkg_threads.get().strip(),
-            "pfs_format": self._fpkg_pfs_format.get(),
-            "image_mode": self._fpkg_img_mode.get(),
-            "deterministic": self._fpkg_deterministic.get(),
-            "coalesce": self._fpkg_coalesce.get(),
-            "adjust_reloc": self._fpkg_adjust_reloc.get(),
-            "force_drm": self._fpkg_force_drm.get(),
-            "pub_lib": self._fpkg_pub_lib.get().strip(),
-            "temp_dir": self._fpkg_temp_dir.get().strip(),
-        }
-        self._fpkg_btn.configure(state="disabled", text="Processando…")
-        self._fpkg_phase.configure(text="Iniciando build FPKG…", text_color="white")
-        self._log_clear(self._fpkg_log)
-        self._fpkg_bar.start()
-        self._fpkg_start_time = time.time()
-        threading.Thread(target=self._fpkg_run, args=(src, out_dir, opts), daemon=True).start()
-
-    def _fpkg_run(self, src, out_dir, opts):
-        success = False
-        try:
-            # ── 1. Prepare paths and native DLL directories ──────────────
-            if _FPKG_DIR not in sys.path:
-                sys.path.insert(0, _FPKG_DIR)
-            try:
-                os.add_dll_directory(_FPKG_DIR)
-                _native = os.path.join(_FPKG_DIR, "runtimes", "win-x64", "native")
-                if os.path.isdir(_native):
-                    os.add_dll_directory(_native)
-            except AttributeError:
-                pass
-
-            # ── 2. Force coreclr (.NET 9) then import pythonnet ─────────
-            try:
-                from pythonnet import load as _pn_load
-                _pn_load("coreclr")
-            except Exception:
-                pass  # already initialised or not needed
-
-            try:
-                import clr as _clr
-            except ImportError as _ie:
-                self.after(0, lambda m=str(_ie): self._log_append(self._fpkg_log,
-                    f"[ERRO] pythonnet não carregou: {m}\nReinstale o PFS Converter.\n"))
-                return
-
-            # ── 3. Verify coreclr / .NET 9 is running ───────────────────
-            try:
-                from System.Runtime.Loader import AssemblyLoadContext as _ALC
-            except Exception as _clr_err:
-                msg = str(_clr_err)
-                self.after(0, lambda m=msg: self._log_append(self._fpkg_log,
-                    "[ERRO] .NET 9 Runtime não encontrado.\n\n"
-                    "O builder FPKG requer o .NET 9 Desktop Runtime.\n"
-                    "Baixe e instale em:\n"
-                    "  https://dotnet.microsoft.com/download/dotnet/9.0\n\n"
-                    f"Detalhe técnico: {m}\n"))
-                return
-
-            # ── 4. Load LibProsperoPkg via AssemblyLoadContext.Default ───
-            try:
-                from System import AppDomain as _AD
-                from System.Reflection import Assembly as _Asm
-
-                def _resolver(sender, args):
-                    short = str(args.Name).split(',')[0]
-                    candidate = os.path.join(_FPKG_DIR, short + '.dll')
-                    if os.path.isfile(candidate):
-                        try:
-                            return _Asm.LoadFrom(candidate)
-                        except Exception:
-                            pass
-                    return None
-
-                _AD.CurrentDomain.AssemblyResolve += _resolver
-                _ALC.Default.LoadFromAssemblyPath(os.path.abspath(_FPKG_DLL))
-                _clr.AddReference("LibProsperoPkg")
-
-            except Exception as _load_err:
-                self.after(0, lambda m=str(_load_err): self._log_append(self._fpkg_log,
-                    f"[ERRO] Falha ao carregar LibProsperoPkg.dll:\n{m}\n"))
-                return
-
-            try:
-                from LibProsperoPkg import ProsperoPackageBuilder, ProsperoBuildOptions, ProsperoPackageMode
-                from LibProsperoPkg import ProsperoPublisherImageMode
-                from LibProsperoPkg.PKG import ProsperoInnerCompression
-                from LibProsperoPkg.PFS.Compression import ProsperoPfsCompressionFormat as _PfsFmt
-            except Exception as _mn:
-                self.after(0, lambda m=str(_mn): self._log_append(self._fpkg_log,
-                    f"[ERRO] Namespace LibProsperoPkg inacessível:\n{m}\n\n"
-                    "Instale o .NET 9 Desktop Runtime:\n"
-                    "  https://dotnet.microsoft.com/download/dotnet/9.0\n"))
-                return
-
-            options = ProsperoBuildOptions()
-            options.SourceFolder = src
-            options.OutputFolder = out_dir
-
-            mode_map = {
-                "Aplicativo": ProsperoPackageMode.Application,
-                "Homebrew": ProsperoPackageMode.Homebrew,
-                "DLC (com dados)": ProsperoPackageMode.AdditionalContentData,
-                "DLC (sem dados)": ProsperoPackageMode.AdditionalContentNoData,
-            }
-            options.Mode = mode_map.get(opts["mode"], ProsperoPackageMode.Application)
-
-            if opts["content_id"]:
-                options.ContentId = opts["content_id"]
-            if opts["passcode"]:
-                options.Passcode = opts["passcode"]
-
-            comp_str = opts["compression"]
-            if comp_str == "Kraken":
-                options.InnerCompression = ProsperoInnerCompression.Kraken
-                options.KrakenCompressionLevel = int(float(opts["kraken_level"]))
-            elif comp_str == "Zlib":
-                options.InnerCompression = ProsperoInnerCompression.Zlib
-            else:
-                options.InnerCompression = getattr(ProsperoInnerCompression, "None")
-
-            try:
-                threads = int(opts["threads"])
-            except (ValueError, TypeError):
-                threads = 0
-            if threads > 0:
-                options.KrakenMaxDegreeOfParallelism = threads
-
-            options.PfsCompressionFormat = (_PfsFmt.Version3 if opts["pfs_format"] == "v3"
-                                            else _PfsFmt.Version2)
-            options.PublisherImageMode = (
-                ProsperoPublisherImageMode.PlaintextNoAuth
-                if opts["image_mode"] == "Plaintext/NoAuth"
-                else ProsperoPublisherImageMode.Native)
-
-            options.DeterministicBuild = bool(opts["deterministic"])
-            options.EnableOuterBlockCoalescing = bool(opts["coalesce"])
-            options.EnableRelocationAlignmentAdjustment = bool(opts["adjust_reloc"])
-            options.ForceStandardApplicationDrm = bool(opts["force_drm"])
-
-            if opts["pub_lib"] and os.path.isfile(opts["pub_lib"]):
-                options.PublishingToolsLibraryPath = opts["pub_lib"]
-            else:
-                options.PublishingToolsLibraryPath = os.path.join(_FPKG_DIR, "libScePubTools.dll")
-
-            if opts.get("temp_dir") and os.path.isdir(opts["temp_dir"]):
-                options.TemporaryDirectory = opts["temp_dir"]
-
-            # Provide placeholder keys so TryLoad*(null) is never called.
-            # Without the Sony PS5 SDK, libScePubTools.dll can't resolve sidecar
-            # key files from its internal directory — setting byte[] keys directly
-            # bypasses that code path entirely.
-            from System import Array, Byte as _Byte
-            def _zeros(n): return Array[_Byte](bytes(n))
-            if not options.PublisherImageKey:
-                options.PublisherImageKey = _zeros(2048)
-            if not options.PublisherEntryKeys:
-                options.PublisherEntryKeys = _zeros(2944)
-            if not options.NapsPfsImageKey:
-                options.NapsPfsImageKey = _zeros(32)
-            if not options.NapsPfsImageSeed:
-                options.NapsPfsImageSeed = _zeros(16)
-
-            from System import Action
-            def _log_cb(msg):
-                self.after(0, lambda m=msg: self._log_append(self._fpkg_log, m + "\n"))
-            _log_action = Action[str](_log_cb)
-
-            self.after(0, lambda: self._fpkg_phase.configure(
-                text="Construindo FPKG…", text_color="white"))
-
-            result = ProsperoPackageBuilder.Build(options, _log_action)
-            out_path = str(result.OutputPath) if result.OutputPath else out_dir
-            self.after(0, lambda p=out_path: self._log_append(
-                self._fpkg_log, f"\n✓ FPKG criado: {p}\n"))
-            success = True
-
-        except Exception as e:
-            import traceback
-            tb = traceback.format_exc()
-            self.after(0, lambda m=tb: self._log_append(self._fpkg_log, f"[ERRO]\n{m}\n"))
-            success = False
-
-        self.after(0, self._fpkg_bar.stop)
-        self._finish(self._fpkg_phase, self._fpkg_btn, self._fpkg_start_time,
-                     success, "▶  Criar FPKG", btn_command=self._fpkg_start)
 
     # ────────────────────────────────────────────────────────
     #  UI helpers

@@ -183,16 +183,6 @@ python -m PyInstaller --noconfirm --onefile --noconsole --uac-admin \
 
 ## Histórico de versões
 
-### v1.5.0
-- **Builder FPKG**: nova aba "FPKG" que converte pasta de dump PS5 diretamente para arquivo `.fpkg` usando `LibProsperoPkg.dll` via pythonnet
-  - Suporte a todos os tipos de volume: Aplicativo, Homebrew, DLC com dados, DLC sem dados
-  - Compressão: Kraken (nível -4..9), Zlib ou nenhuma
-  - Formato PFS: v2 ou v3
-  - Image mode: Native ou Plaintext/NoAuth
-  - Opções avançadas: build determinístico, coalescer blocos, ajustar alinhamento, forçar DRM padrão
-  - Auto-leitura do Content ID a partir do `sce_sys/param.json`
-  - Exibe mensagem clara de erro caso o **.NET 9 Desktop Runtime** não esteja instalado
-
 ### v1.4.3
 - **Atualização mkpfs 0.0.9 → 1.0.0**
 - **PFS exFAT sem OSFMount**: modo PFS exFAT agora usa `mkpfs pack folder` diretamente em um único passo, eliminando a dependência do OSFMount e do script PowerShell para esse formato — conversão mais rápida e sem arquivo `.exfat` temporário em disco
