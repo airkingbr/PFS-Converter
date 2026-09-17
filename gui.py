@@ -49,7 +49,7 @@ _RE_PS1_STEP = re.compile(r"\[(\d+)/(\d+)\]")
 ctk.set_appearance_mode("dark")
 ctk.set_default_color_theme("blue")
 
-VERSION = "1.5.3"
+VERSION = "1.5.4"
 
 CONFIG_PATH = os.path.join(os.environ.get("APPDATA", os.path.expanduser("~")), "PFS Converter", "config.json")
 
@@ -1179,12 +1179,17 @@ class App(ctk.CTk):
             options.EnableRelocationAlignmentAdjustment = bool(opts["adjust_reloc"])
             options.ForceStandardApplicationDrm = bool(opts["force_drm"])
 
-            _default_pub_lib = os.path.join(_FPKG_DIR, "libScePubTools.dll")
             if opts["pub_lib"] and os.path.isfile(opts["pub_lib"]):
                 options.PublishingToolsLibraryPath = opts["pub_lib"]
             else:
-                # Always set bundled path — even if isfile fails in frozen bundle
-                options.PublishingToolsLibraryPath = _default_pub_lib
+                # Copy libScePubTools.dll to a stable temp path (outside _MEIPASS)
+                # so .NET can locate sidecar files relative to it without issues.
+                import tempfile as _tf
+                _bundled_pub = os.path.join(_FPKG_DIR, "libScePubTools.dll")
+                _stable_pub = os.path.join(_tf.gettempdir(), "libScePubTools.dll")
+                if os.path.isfile(_bundled_pub):
+                    shutil.copy2(_bundled_pub, _stable_pub)
+                options.PublishingToolsLibraryPath = _stable_pub
 
             if opts.get("temp_dir") and os.path.isdir(opts["temp_dir"]):
                 options.TemporaryDirectory = opts["temp_dir"]
