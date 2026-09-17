@@ -1187,13 +1187,15 @@ class App(ctk.CTk):
             if opts.get("temp_dir") and os.path.isdir(opts["temp_dir"]):
                 options.TemporaryDirectory = opts["temp_dir"]
 
+            from System import Action
             def _log_cb(msg):
                 self.after(0, lambda m=msg: self._log_append(self._fpkg_log, m + "\n"))
+            _log_action = Action[str](_log_cb)
 
             self.after(0, lambda: self._fpkg_phase.configure(
                 text="Construindo FPKG…", text_color="white"))
 
-            result = ProsperoPackageBuilder.Build(options, _log_cb)
+            result = ProsperoPackageBuilder.Build(options, _log_action)
             out_path = str(result.OutputPath) if result.OutputPath else out_dir
             self.after(0, lambda p=out_path: self._log_append(
                 self._fpkg_log, f"\n✓ FPKG criado: {p}\n"))
