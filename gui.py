@@ -49,7 +49,7 @@ _RE_PS1_STEP = re.compile(r"\[(\d+)/(\d+)\]")
 ctk.set_appearance_mode("dark")
 ctk.set_default_color_theme("blue")
 
-VERSION = "1.5.0"
+VERSION = "1.5.1"
 
 CONFIG_PATH = os.path.join(os.environ.get("APPDATA", os.path.expanduser("~")), "PFS Converter", "config.json")
 
@@ -1071,7 +1071,13 @@ class App(ctk.CTk):
             except AttributeError:
                 pass
 
-            # ── 2. Import pythonnet ──────────────────────────────────────
+            # ── 2. Force coreclr (.NET 9) then import pythonnet ─────────
+            try:
+                from pythonnet import load as _pn_load
+                _pn_load("coreclr")
+            except Exception:
+                pass  # already initialised or not needed
+
             try:
                 import clr as _clr
             except ImportError as _ie:
@@ -1079,9 +1085,9 @@ class App(ctk.CTk):
                     f"[ERRO] pythonnet não carregou: {m}\nReinstale o PFS Converter.\n"))
                 return
 
-            # ── 3. Verify CLR / .NET 9 is available ─────────────────────
+            # ── 3. Verify coreclr / .NET 9 is running ───────────────────
             try:
-                from System import String as _Str  # noqa: F401 — just a probe
+                from System.Runtime.Loader import AssemblyLoadContext as _ALC
             except Exception as _clr_err:
                 msg = str(_clr_err)
                 self.after(0, lambda m=msg: self._log_append(self._fpkg_log,
@@ -1092,15 +1098,11 @@ class App(ctk.CTk):
                     f"Detalhe técnico: {m}\n"))
                 return
 
-            # ── 4. Load LibProsperoPkg into the DEFAULT AssemblyLoadContext ──
-            # clr.AddReference loads into an isolated context — types won't be
-            # visible to Python imports. We must use AssemblyLoadContext.Default
-            # so pythonnet can resolve the namespace.
+            # ── 4. Load LibProsperoPkg via AssemblyLoadContext.Default ───
             try:
                 from System import AppDomain as _AD
                 from System.Reflection import Assembly as _Asm
 
-                # Register a resolver so LibProsperoPkg's own deps load from fpkg/
                 def _resolver(sender, args):
                     short = str(args.Name).split(',')[0]
                     candidate = os.path.join(_FPKG_DIR, short + '.dll')
@@ -1112,14 +1114,8 @@ class App(ctk.CTk):
                     return None
 
                 _AD.CurrentDomain.AssemblyResolve += _resolver
-
-                # Load via Default context (path must be absolute)
-                try:
-                    from System.Runtime.Loader import AssemblyLoadContext as _ALC
-                    _ALC.Default.LoadFromAssemblyPath(os.path.abspath(_FPKG_DLL))
-                except Exception:
-                    # Fallback for older pythonnet builds
-                    _Asm.LoadFrom(os.path.abspath(_FPKG_DLL))
+                _ALC.Default.LoadFromAssemblyPath(os.path.abspath(_FPKG_DLL))
+                _clr.AddReference("LibProsperoPkg")
 
             except Exception as _load_err:
                 self.after(0, lambda m=str(_load_err): self._log_append(self._fpkg_log,
@@ -1131,10 +1127,10 @@ class App(ctk.CTk):
                 from LibProsperoPkg import ProsperoPublisherImageMode
                 from LibProsperoPkg.PKG import ProsperoInnerCompression
                 from LibProsperoPkg.PFS.Compression import ProsperoPfsCompressionFormat as _PfsFmt
-            except ModuleNotFoundError as _mn:
+            except Exception as _mn:
                 self.after(0, lambda m=str(_mn): self._log_append(self._fpkg_log,
-                    f"[ERRO] Namespace LibProsperoPkg ainda inacessível:\n{m}\n\n"
-                    "Tente instalar o .NET 9 Desktop Runtime:\n"
+                    f"[ERRO] Namespace LibProsperoPkg inacessível:\n{m}\n\n"
+                    "Instale o .NET 9 Desktop Runtime:\n"
                     "  https://dotnet.microsoft.com/download/dotnet/9.0\n"))
                 return
 
