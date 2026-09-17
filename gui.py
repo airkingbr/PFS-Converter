@@ -280,6 +280,7 @@ class App(ctk.CTk):
         self._fpkg_adjust_reloc = ctk.BooleanVar(value=True)
         self._fpkg_force_drm   = ctk.BooleanVar(value=True)
         self._fpkg_pub_lib     = ctk.StringVar(value=cfg.get("fpkg_pub_lib", ""))
+        self._fpkg_temp_dir    = ctk.StringVar(value=cfg.get("fpkg_temp_dir", ""))
         self._fpkg_start_time  = 0
 
         self._build_ui()
@@ -888,7 +889,15 @@ class App(ctk.CTk):
         ctk.CTkLabel(card_io, text="Passcode (32 chars hex)", anchor="w",
                      font=ctk.CTkFont(size=11)).pack(fill="x", padx=16, pady=(0, 2))
         ctk.CTkEntry(card_io, textvariable=self._fpkg_passcode,
-                     placeholder_text="00000000000000000000000000000000").pack(fill="x", padx=16, pady=(0, 12))
+                     placeholder_text="00000000000000000000000000000000").pack(fill="x", padx=16, pady=(0, 8))
+
+        ctk.CTkLabel(card_io, text="Pasta temporária (opcional)", anchor="w",
+                     font=ctk.CTkFont(size=11)).pack(fill="x", padx=16, pady=(0, 2))
+        r_tmp = ctk.CTkFrame(card_io, fg_color="transparent")
+        r_tmp.pack(fill="x", padx=16, pady=(0, 12))
+        ctk.CTkEntry(r_tmp, textvariable=self._fpkg_temp_dir,
+                     placeholder_text="Deixe vazio para usar %TEMP%...").pack(side="left", fill="x", expand=True, padx=(0, 8))
+        ctk.CTkButton(r_tmp, text="Browse", width=90, command=self._fpkg_pick_tmp).pack(side="left")
 
         # Log card
         card_log = self._card(left)
@@ -1002,6 +1011,12 @@ class App(ctk.CTk):
             self._fpkg_out_dir.set(path)
             _save_config({**_load_config(), "fpkg_out_dir": path})
 
+    def _fpkg_pick_tmp(self):
+        path = filedialog.askdirectory(title="Selecione a pasta temporária")
+        if path:
+            self._fpkg_temp_dir.set(path)
+            _save_config({**_load_config(), "fpkg_temp_dir": path})
+
     def _fpkg_pick_lib(self):
         path = filedialog.askopenfilename(
             title="Selecione libScePubTools.dll",
@@ -1033,6 +1048,7 @@ class App(ctk.CTk):
             "adjust_reloc": self._fpkg_adjust_reloc.get(),
             "force_drm": self._fpkg_force_drm.get(),
             "pub_lib": self._fpkg_pub_lib.get().strip(),
+            "temp_dir": self._fpkg_temp_dir.get().strip(),
         }
         self._fpkg_btn.configure(state="disabled", text="Processando…")
         self._fpkg_phase.configure(text="Iniciando build FPKG…", text_color="white")
@@ -1044,9 +1060,18 @@ class App(ctk.CTk):
     def _fpkg_run(self, src, out_dir, opts):
         success = False
         try:
-            # Ensure fpkg DLL directory is in sys path for native DLL resolution
+            # Add fpkg dir to sys.path so pythonnet can discover the assembly by name
             if _FPKG_DIR not in sys.path:
                 sys.path.insert(0, _FPKG_DIR)
+
+            # Register native DLL directories (Python 3.8+) so libScePubTools.dll loads
+            try:
+                os.add_dll_directory(_FPKG_DIR)
+                _native = os.path.join(_FPKG_DIR, "runtimes", "win-x64", "native")
+                if os.path.isdir(_native):
+                    os.add_dll_directory(_native)
+            except AttributeError:
+                pass
 
             # Load pythonnet / CLR
             try:
@@ -1056,12 +1081,12 @@ class App(ctk.CTk):
                     "[ERRO] pythonnet não encontrado. Reinstale o PFS Converter.\n"))
                 return
 
-            # Try to load LibProsperoPkg.dll
+            # Load the assembly by NAME (not full path) — pythonnet finds it via sys.path
             try:
-                _clr.AddReference(_FPKG_DLL)
+                _clr.AddReference("LibProsperoPkg")
             except Exception as load_err:
                 msg = str(load_err)
-                if any(k in msg.lower() for k in ("runtime", "net", "9.0", "dotnet", "coreclr", "clr")):
+                if any(k in msg.lower() for k in ("runtime", "net", "9.0", "dotnet", "coreclr", "clr", "could not")):
                     err = (
                         "[ERRO] .NET 9 Runtime não encontrado.\n\n"
                         "O builder FPKG requer o .NET 9 Desktop Runtime.\n"
@@ -1128,6 +1153,9 @@ class App(ctk.CTk):
                 options.PublishingToolsLibraryPath = opts["pub_lib"]
             elif os.path.isfile(os.path.join(_FPKG_DIR, "libScePubTools.dll")):
                 options.PublishingToolsLibraryPath = os.path.join(_FPKG_DIR, "libScePubTools.dll")
+
+            if opts.get("temp_dir") and os.path.isdir(opts["temp_dir"]):
+                options.TemporaryDirectory = opts["temp_dir"]
 
             def _log_cb(msg):
                 self.after(0, lambda m=msg: self._log_append(self._fpkg_log, m + "\n"))
