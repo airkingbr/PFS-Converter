@@ -1060,11 +1060,9 @@ class App(ctk.CTk):
     def _fpkg_run(self, src, out_dir, opts):
         success = False
         try:
-            # Add fpkg dir to sys.path so pythonnet can discover the assembly by name
+            # ── 1. Prepare paths and native DLL directories ──────────────
             if _FPKG_DIR not in sys.path:
                 sys.path.insert(0, _FPKG_DIR)
-
-            # Register native DLL directories (Python 3.8+) so libScePubTools.dll loads
             try:
                 os.add_dll_directory(_FPKG_DIR)
                 _native = os.path.join(_FPKG_DIR, "runtimes", "win-x64", "native")
@@ -1073,36 +1071,59 @@ class App(ctk.CTk):
             except AttributeError:
                 pass
 
-            # Load pythonnet / CLR
+            # ── 2. Import pythonnet ──────────────────────────────────────
             try:
                 import clr as _clr
-            except ImportError:
-                self.after(0, lambda: self._log_append(self._fpkg_log,
-                    "[ERRO] pythonnet não encontrado. Reinstale o PFS Converter.\n"))
+            except ImportError as _ie:
+                self.after(0, lambda m=str(_ie): self._log_append(self._fpkg_log,
+                    f"[ERRO] pythonnet não carregou: {m}\nReinstale o PFS Converter.\n"))
                 return
 
-            # Load the assembly by NAME (not full path) — pythonnet finds it via sys.path
+            # ── 3. Verify CLR / .NET 9 is available ─────────────────────
             try:
-                _clr.AddReference("LibProsperoPkg")
-            except Exception as load_err:
-                msg = str(load_err)
-                if any(k in msg.lower() for k in ("runtime", "net", "9.0", "dotnet", "coreclr", "clr", "could not")):
-                    err = (
-                        "[ERRO] .NET 9 Runtime não encontrado.\n\n"
-                        "O builder FPKG requer o .NET 9 Desktop Runtime.\n"
-                        "Baixe e instale em:\n"
-                        "  https://dotnet.microsoft.com/download/dotnet/9.0\n\n"
-                        f"Detalhe: {msg}\n"
-                    )
-                else:
-                    err = f"[ERRO] Falha ao carregar LibProsperoPkg.dll:\n{msg}\n"
-                self.after(0, lambda m=err: self._log_append(self._fpkg_log, m))
+                from System import String as _Str  # noqa: F401 — just a probe
+            except Exception as _clr_err:
+                msg = str(_clr_err)
+                self.after(0, lambda m=msg: self._log_append(self._fpkg_log,
+                    "[ERRO] .NET 9 Runtime não encontrado.\n\n"
+                    "O builder FPKG requer o .NET 9 Desktop Runtime.\n"
+                    "Baixe e instale em:\n"
+                    "  https://dotnet.microsoft.com/download/dotnet/9.0\n\n"
+                    f"Detalhe técnico: {m}\n"))
                 return
 
-            from LibProsperoPkg import ProsperoPackageBuilder, ProsperoBuildOptions, ProsperoPackageMode
-            from LibProsperoPkg import ProsperoPublisherImageMode
-            from LibProsperoPkg.PKG import ProsperoInnerCompression
-            from LibProsperoPkg.PFS.Compression import ProsperoPfsCompressionFormat as _PfsFmt
+            # ── 4. Load LibProsperoPkg ───────────────────────────────────
+            # Try by path first, then by name — handles both bundled and dev setups
+            _loaded = False
+            for _ref in (_FPKG_DLL, "LibProsperoPkg"):
+                try:
+                    _clr.AddReference(_ref)
+                    _loaded = True
+                    break
+                except Exception:
+                    pass
+            if not _loaded:
+                # Last resort: System.Reflection.Assembly.LoadFrom
+                try:
+                    from System.Reflection import Assembly as _Asm
+                    _Asm.LoadFrom(_FPKG_DLL)
+                    _loaded = True
+                except Exception as _asm_err:
+                    self.after(0, lambda m=str(_asm_err): self._log_append(self._fpkg_log,
+                        f"[ERRO] Falha ao carregar LibProsperoPkg.dll:\n{m}\n"))
+                    return
+
+            try:
+                from LibProsperoPkg import ProsperoPackageBuilder, ProsperoBuildOptions, ProsperoPackageMode
+                from LibProsperoPkg import ProsperoPublisherImageMode
+                from LibProsperoPkg.PKG import ProsperoInnerCompression
+                from LibProsperoPkg.PFS.Compression import ProsperoPfsCompressionFormat as _PfsFmt
+            except ModuleNotFoundError as _mn:
+                self.after(0, lambda m=str(_mn): self._log_append(self._fpkg_log,
+                    f"[ERRO] Namespace LibProsperoPkg não acessível após carregamento:\n{m}\n\n"
+                    "Verifique se o .NET 9 Desktop Runtime está instalado:\n"
+                    "  https://dotnet.microsoft.com/download/dotnet/9.0\n"))
+                return
 
             options = ProsperoBuildOptions()
             options.SourceFolder = src
