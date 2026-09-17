@@ -1092,26 +1092,39 @@ class App(ctk.CTk):
                     f"Detalhe técnico: {m}\n"))
                 return
 
-            # ── 4. Load LibProsperoPkg ───────────────────────────────────
-            # Try by path first, then by name — handles both bundled and dev setups
-            _loaded = False
-            for _ref in (_FPKG_DLL, "LibProsperoPkg"):
+            # ── 4. Load LibProsperoPkg into the DEFAULT AssemblyLoadContext ──
+            # clr.AddReference loads into an isolated context — types won't be
+            # visible to Python imports. We must use AssemblyLoadContext.Default
+            # so pythonnet can resolve the namespace.
+            try:
+                from System import AppDomain as _AD
+                from System.Reflection import Assembly as _Asm
+
+                # Register a resolver so LibProsperoPkg's own deps load from fpkg/
+                def _resolver(sender, args):
+                    short = str(args.Name).split(',')[0]
+                    candidate = os.path.join(_FPKG_DIR, short + '.dll')
+                    if os.path.isfile(candidate):
+                        try:
+                            return _Asm.LoadFrom(candidate)
+                        except Exception:
+                            pass
+                    return None
+
+                _AD.CurrentDomain.AssemblyResolve += _resolver
+
+                # Load via Default context (path must be absolute)
                 try:
-                    _clr.AddReference(_ref)
-                    _loaded = True
-                    break
+                    from System.Runtime.Loader import AssemblyLoadContext as _ALC
+                    _ALC.Default.LoadFromAssemblyPath(os.path.abspath(_FPKG_DLL))
                 except Exception:
-                    pass
-            if not _loaded:
-                # Last resort: System.Reflection.Assembly.LoadFrom
-                try:
-                    from System.Reflection import Assembly as _Asm
-                    _Asm.LoadFrom(_FPKG_DLL)
-                    _loaded = True
-                except Exception as _asm_err:
-                    self.after(0, lambda m=str(_asm_err): self._log_append(self._fpkg_log,
-                        f"[ERRO] Falha ao carregar LibProsperoPkg.dll:\n{m}\n"))
-                    return
+                    # Fallback for older pythonnet builds
+                    _Asm.LoadFrom(os.path.abspath(_FPKG_DLL))
+
+            except Exception as _load_err:
+                self.after(0, lambda m=str(_load_err): self._log_append(self._fpkg_log,
+                    f"[ERRO] Falha ao carregar LibProsperoPkg.dll:\n{m}\n"))
+                return
 
             try:
                 from LibProsperoPkg import ProsperoPackageBuilder, ProsperoBuildOptions, ProsperoPackageMode
@@ -1120,8 +1133,8 @@ class App(ctk.CTk):
                 from LibProsperoPkg.PFS.Compression import ProsperoPfsCompressionFormat as _PfsFmt
             except ModuleNotFoundError as _mn:
                 self.after(0, lambda m=str(_mn): self._log_append(self._fpkg_log,
-                    f"[ERRO] Namespace LibProsperoPkg não acessível após carregamento:\n{m}\n\n"
-                    "Verifique se o .NET 9 Desktop Runtime está instalado:\n"
+                    f"[ERRO] Namespace LibProsperoPkg ainda inacessível:\n{m}\n\n"
+                    "Tente instalar o .NET 9 Desktop Runtime:\n"
                     "  https://dotnet.microsoft.com/download/dotnet/9.0\n"))
                 return
 
